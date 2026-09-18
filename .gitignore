@@ -1,0 +1,172 @@
+# ==========================
+# Secrets & environment files
+# ==========================
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+credentials.json
+
+# ==========================
+# Python
+# ==========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ==========================
+# Virtual environments
+# ==========================
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+
+# ==========================
+# Package managers (poetry/uv/pipenv lockfiles are fine to keep,
+# but caches/local state are not)
+# ==========================
+.uv/
+.pdm-python
+Pipfile.lock
+poetry.lock.bak
+
+# ==========================
+# Testing & coverage
+# ==========================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# ==========================
+# Type checkers / linters
+# ==========================
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pyre/
+.pytype/
+
+# ==========================
+# Jupyter (in case of exploration notebooks)
+# ==========================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ==========================
+# Logs & runtime data
+# ==========================
+*.log
+logs/
+*.pid
+*.sock
+nohup.out
+
+# ==========================
+# Cache / temp files (project-specific: app/utils/cache.py output)
+# ==========================
+.cache/
+*.cache
+tmp/
+temp/
+*.tmp
+
+# ==========================
+# LangChain / LangGraph / LLM-specific
+# ==========================
+.langchain/
+.langgraph/
+langgraph_checkpoints/
+*.trace
+.chroma/
+chroma_db/
+*.faiss
+*.index
+
+# ==========================
+# MCP server local state (if any)
+# ==========================
+.mcp/
+mcp_server.log
+
+# ==========================
+# FastAPI / Uvicorn
+# ==========================
+*.sqlite3
+*.db
+
+# ==========================
+# OS-specific junk
+# ==========================
+.DS_Store
+Thumbs.db
+Desktop.ini
+*~
+.directory
+
+# ==========================
+# Editor / IDE
+# ==========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-workspace
+*.sublime-project
+
+# ==========================
+# Docker (if you containerize later)
+# ==========================
+*.pid
+.dockerignore.bak
+
+# ==========================
+# Node (only relevant if ui/ ever grows beyond plain HTML/JS)
+# ==========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ==========================
+# Demo recordings (keep out of repo — link them in README instead)
+# ==========================
+*.mp4
+*.mov
+*.webm
+
+# ==========================
+# Submission evidence — KEEP THESE, do not ignore
+# (listed here only as a reminder, not an actual ignore rule)
+# docs/evidence/*.json  -> should be committed, required for submission
