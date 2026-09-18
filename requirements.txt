@@ -1,0 +1,20 @@
+# --- Web Framework & Server ---
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+
+# --- Environment & Configuration ---
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+python-dotenv>=1.0.1
+
+# --- HTTP Client & Async Support ---
+httpx>=0.27.0
+
+# --- AI Agent Framework & Tooling ---
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-openai>=0.1.0
+langgraph>=0.1.0
+
+# --- Model Context Protocol (MCP) SDK ---
+mcp>=1.0.0
