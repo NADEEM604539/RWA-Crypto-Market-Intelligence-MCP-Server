@@ -1,0 +1,60 @@
+CMC Real-World Asset Intelligence — Agent Demo
+LangGraph agent → MCP server (app.server) → live CoinMarketCap API. Built for CMC Hackathon · AI Agents and Automation track
+
+Perform a multi-layered institutional cross-asset liquidity and structural audit comparing the tokenized gold RWA ecosystem (resolving token symbol 'PAXG') against primary crypto assets ('BTC' and 'ETH'), incorporating global market dominance context.
+
+Here's a multi-layered institutional cross-asset liquidity and structural audit comparing the tokenized gold RWA ecosystem (PAXG) against primary crypto assets Bitcoin (BTC) and Ethereum (ETH), incorporating global market dominance context:
+
+Tokenized Gold RWA (PAXG) Overview:
+Asset: Gold (commodity)
+Token: PAX Gold (PAXG) issued by Paxos
+Price: ~$4,365 per token
+Market Cap: ~$1.9 billion USD
+24h Volume: ~$60.9 million USD
+Volume to Market Cap Ratio: ~0.0321
+24h Price Change: -0.14%
+Comparison with Bitcoin (BTC):
+BTC Price: ~$81,311
+BTC Market Cap: ~$1.63 trillion USD
+BTC 24h Volume: ~$20.5 billion USD
+BTC Volume to Market Cap Ratio: ~0.0126
+BTC 24h Price Change: +0.52%
+Market Cap Ratio (BTC to PAXG): BTC market cap is 861.13 times larger than PAXG.
+Liquidity: PAXG has a higher volume-to-market-cap ratio (0.0321) compared to BTC (0.0126), indicating relatively higher trading activity per unit of market cap.
+Comparison with Ethereum (ETH):
+ETH Price: ~$2,635
+ETH Market Cap: ~$322 billion USD
+ETH 24h Volume: ~$10.0 billion USD
+ETH Volume to Market Cap Ratio: ~0.0312
+ETH 24h Price Change: +0.98%
+Market Cap Ratio (ETH to PAXG): ETH market cap is 169.56 times larger than PAXG.
+Liquidity: PAXG and ETH have comparable volume-to-market-cap ratios (~0.0320 vs. ~0.0312), indicating similar relative liquidity levels.
+Global Market Context:
+Bitcoin Dominance: ~58.78%
+Ethereum Dominance: ~11.57%
+Total Crypto Market Cap: ~$2.78 trillion USD
+Total 24h Volume: ~$71.96 billion USD
+Active Cryptocurrencies: 8,164
+Summary:
+
+PAXG, as a tokenized gold asset, holds a significant but much smaller market cap compared to BTC and ETH.
+BTC dominates the market with over 58% dominance and a market cap over 860 times that of PAXG.
+ETH also has a substantially larger market cap (~170x PAXG) but shows similar relative liquidity to PAXG.
+PAXG exhibits strong relative liquidity compared to BTC and ETH, with a higher volume-to-market-cap ratio, suggesting active trading relative to its size.
+The tokenized gold ecosystem is a niche but liquid RWA market within the broader crypto landscape dominated by BTC and ETH.
+If you want, I can provide further detailed analysis or focus on specific structural or liquidity aspects.
+
+🔍 Tool calls & raw API responses
+
+→ CALL resolve_rwa_asset({'symbol': 'PAXG'})
+→ CALL compare_rwa_vs_crypto({'rwa_symbol': 'PAXG', 'crypto_symbol': 'BTC'})
+→ CALL compare_rwa_vs_crypto({'rwa_symbol': 'PAXG', 'crypto_symbol': 'ETH'})
+→ CALL get_global_market_metrics({})
+← RESULT [resolve_rwa_asset]
+[{'type': 'text', 'text': '{\n  "rwa_id": 1,\n  "name": "Gold",\n  "symbol": "GOLD",\n  "slug": "gold",\n  "asset_type": "commodity",\n  "rwa_rank": 1,\n  "has_tokens": true,\n  "resolved_via": "token_symbol",\n  "matched_token": {\n    "symbol": "PAXG",\n    "name": "PAX Gold",\n    "crypto_id": 4705,\n    "issuer_id": "68904c24abae9b5b9fb35815",\n    "issuer_name": "Paxos"\n  }\n}', 'id': 'lc_cc56265b-bbd0-44e3-8c12-395bbc91cc49'}]
+← RESULT [compare_rwa_vs_crypto]
+[{'type': 'text', 'text': '{\n  "comparison_summary": "BTC market cap is 861.13x the size of Gold (PAXG).",\n  "rwa_asset": {\n    "symbol": "GOLD",\n    "token_symbol": "PAXG",\n    "parent_symbol": "GOLD",\n    "issuer_name": "Paxos",\n    "name": "PAX Gold",\n    "price_usd": 4365.166227933567,\n    "market_cap_usd": 1896661965.24,\n    "volume_24h_usd": 60929359.33602132,\n    "percent_change_24h": -0.14035521,\n    "volume_to_market_cap_ratio": 0.032125,\n    "is_specific_token": true\n  },\n  "crypto_asset": {\n    "symbol": "BTC",\n    "name": "Bitcoin",\n    "price_usd": 81311.16538893465,\n    "market_cap_usd": 1633273961551.8982,\n    "volume_24h_usd": 20543880153.619175,\n    "percent_change_24h": 0.52181919,\n    "volume_to_market_cap_ratio": 0.012578\n  },\n  "metrics": {\n    "market_cap_ratio_crypto_to_rwa": 861.13,\n    "volume_to_market_cap_ratio_rwa": 0.032125,\n    "volume_to_market_cap_ratio_crypto": 0.012578,\n    "notes": []\n  }\n}', 'id': 'lc_b3f6aad1-662c-46a3-8112-0e298faeba87'}]
+← RESULT [compare_rwa_vs_crypto]
+[{'type': 'text', 'text': '{\n  "comparison_summary": "ETH market cap is 169.56x the size of Gold (PAXG).",\n  "rwa_asset": {\n    "symbol": "GOLD",\n    "token_symbol": "PAXG",\n    "parent_symbol": "GOLD",\n    "issuer_name": "Paxos",\n    "name": "PAX Gold",\n    "price_usd": 4365.13388500211,\n    "market_cap_usd": 1896647912.26,\n    "volume_24h_usd": 60707245.39169456,\n    "percent_change_24h": -0.14035521,\n    "volume_to_market_cap_ratio": 0.032008,\n    "is_specific_token": true\n  },\n  "crypto_asset": {\n    "symbol": "ETH",\n    "name": "Ethereum",\n    "price_usd": 2634.7593821791497,\n    "market_cap_usd": 321603568964.75507,\n    "volume_24h_usd": 10040187495.484251,\n    "percent_change_24h": 0.98484641,\n    "volume_to_market_cap_ratio": 0.031219\n  },\n  "metrics": {\n    "market_cap_ratio_crypto_to_rwa": 169.56,\n    "volume_to_market_cap_ratio_rwa": 0.032008,\n    "volume_to_market_cap_ratio_crypto": 0.031219,\n    "notes": []\n  }\n}', 'id': 'lc_4d90ad70-0786-4de1-bb32-899bfb17960c'}]
+← RESULT [get_global_market_metrics]
+[{'type': 'text', 'text': '{\n  "btc_dominance": 58.775203068847,\n  "eth_dominance": 11.573000627545,\n  "active_cryptocurrencies": 8164,\n  "total_market_cap_usd": 2778274638979.096,\n  "total_volume_24h_usd": 71959163378.4,\n  "last_updated": "2026-09-19T23:38:59.999Z"\n}', 'id': 'lc_fef7f631-66b5-4fbb-86ba-600ff488aca8'}]
