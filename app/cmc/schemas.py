@@ -109,17 +109,11 @@ class CryptoAssetData(BaseModel):
 
 
 class CryptoQuotesResponseData(BaseModel):
-    __root__: Dict[str, CryptoAssetData] = Field(default_factory=dict)
-
-    def model_dump(self, *args, **kwargs):
-        data = super().model_dump(*args, **kwargs)
-        if isinstance(data, dict):
-            return data.get("__root__", data)
-        return data
+    data: Dict[str, CryptoAssetData] = Field(default_factory=dict)
 
 
 class CryptoQuotesResponse(BaseModel):
-    data: CryptoQuotesResponseData
+    data: Dict[str, CryptoAssetData] = Field(default_factory=dict)
     status: CMCStatus
 
 
