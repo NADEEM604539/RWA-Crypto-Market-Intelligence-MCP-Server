@@ -8,6 +8,21 @@ client live tools for tokenized Real-World Assets (RWAs) — gold, treasuries,
 equities, and more — and lets an agent compare them directly against
 cryptocurrencies, all backed by the CoinMarketCap Pro API.
 
+## Live deployed MCP server
+
+This project is deployed and available for remote MCP clients at:
+
+- MCP endpoint: `https://cmcserver.fastmcp.app/mcp`
+- Health check: `https://cmcserver.fastmcp.app/`
+- Authentication header: `X-CMC_PRO_API_KEY`
+
+This is the public server you can connect your agent, IDE, or custom client to.
+
+For full deployment instructions and production setup details, see:
+
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- [docs/MCP_CONNECTION.md](docs/MCP_CONNECTION.md)
+
 ## Why this exists
 
 CoinMarketCap now tracks tokenized RWAs alongside crypto, but that data is
@@ -63,6 +78,49 @@ Every tool talks to the live CoinMarketCap Pro API — nothing is mocked.
   `X-CMC_PRO_API_KEY` header, verified and rate-limited independently, so
   the server can serve multiple users/keys safely.
 
+## How to connect to the live MCP server
+
+Use the deployed endpoint below in any MCP-compatible client.
+
+```text
+https://cmcserver.fastmcp.app/mcp
+```
+
+With the following request header:
+
+```http
+X-CMC_PRO_API_KEY: your_coinmarketcap_api_key_here
+```
+
+### Example for Claude Desktop
+
+```json
+{
+  "mcpServers": {
+    "coinmarketcap": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://cmcserver.fastmcp.app/mcp",
+        "--header",
+        "X-CMC_PRO_API_KEY:${CMC_API_KEY}"
+      ],
+      "env": {
+        "CMC_API_KEY": "your_coinmarketcap_api_key_here"
+      }
+    }
+  }
+}
+```
+
+### Example for Cursor / custom agents
+
+```bash
+npx mcp-remote https://cmcserver.fastmcp.app/mcp --header "X-CMC_PRO_API_KEY:your_coinmarketcap_api_key_here"
+```
+
+For a full remote connection walkthrough, see [docs/MCP_CONNECTION.md](docs/MCP_CONNECTION.md).
+
 ## Project layout
 
 ```
@@ -87,12 +145,18 @@ app/
     logging.py            # Structured, secret-redacting logger
   requirements.txt
   .env.example
+
+docs/
+  DEPLOYMENT.md          # Full deployment / production instructions
+  MCP_CONNECTION.md      # Remote client connection setup
+  README_STREAMLIT.md    # Demo UI notes
+  architecture.md        # Architecture overview
+
 tests/
   agent.py              # LangGraph ReAct agent wired to the MCP server (HTTP transport)
   full_test.py            # Automated end-to-end diagnostic test suite (CI-friendly, exit code 0/1)
   test_rwa_resolution.py   # Focused tests for the resolver
   streamlit_app.py          # Chat UI demo on top of tests/agent.py
-  README_STREAMLIT.md        # Demo UI setup notes
   requirements.txt
 ```
 

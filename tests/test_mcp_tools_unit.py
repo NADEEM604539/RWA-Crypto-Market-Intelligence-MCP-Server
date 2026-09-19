@@ -12,7 +12,7 @@ from app.cmc.client import cmc_client
 from app.tools.compare_rwa_vs_crypto import compare_rwa_vs_crypto
 from app.tools.resolve_rwa_asset import resolve_rwa_asset
 
-DUMMY_API_KEY = "9d1e589fcd1445a0812da69f21edb5be"
+DUMMY_API_KEY = ""
 
 
 def test_resolve_rwa_asset_accepts_token_symbol(monkeypatch: Any) -> None:
