@@ -1,17 +1,17 @@
 # FastMCP Server Deployment & Production Setup Guide
 
-This document outlines the full deployment procedure for the CoinMarketCap Real-World Asset (RWA) & Crypto Intelligence FastMCP server. It covers local setup, environment configuration, Docker deployment, production hosting, and health verification.
+This document defines the production deployment path for the CoinMarketCap Real-World Asset (RWA) & Crypto Intelligence FastMCP server.
 
 ## 1. Overview
 
-The service is a stateless FastMCP HTTP server that exposes live CoinMarketCap market tools to MCP-compatible clients over HTTP/SSE-compatible transport. Each client request authenticates with a per-request `X-CMC_PRO_API_KEY` header, so the server can safely serve multiple users or multiple agent sessions without sharing a single global secret.
+The service is a stateless FastMCP HTTP server that exposes CoinMarketCap-backed intelligence to MCP clients over remote HTTP/SSE transport. Each request is authenticated via the `X-CMC_PRO_API_KEY` header, which ensures per-request authorization without hardcoding a global key into the runtime environment.
 
-Production endpoint:
+### Production endpoints
 
-- MCP endpoint: `https://cmcserver.fastmcp.app/mcp`
-- Health route: `https://cmcserver.fastmcp.app/`
+- **Remote MCP endpoint:** `https://cmcserver.fastmcp.app/mcp`
+- **Health route:** `https://cmcserver.fastmcp.app/`
 
-The server exposes tools such as:
+### Live tool capabilities
 
 - `resolve_rwa_asset`
 - `get_rwa_market_quote`
@@ -21,30 +21,14 @@ The server exposes tools such as:
 
 ---
 
-## 2. System Architecture
+## 2. Runtime and platform requirements
 
-```text
-┌─────────────────────────┐      HTTP / SSE       ┌────────────────────────────┐
-│                         │ ───────────────────> │ FastMCP Server             │
-│ AI Client / Agent       │                       │ (Uvicorn / HTTP transport) │
-│                         │ <─────────────────── │                            │
-└─────────────────────────┘                       └──────────────┬─────────────┘
-                                                              │
-                                                              │ X-CMC_PRO_API_KEY
-                                                              ▼
-                                                   ┌─────────────────────────┐
-                                                   │ CoinMarketCap Pro API   │
-                                                   └─────────────────────────┘
-```
+- **Python:** 3.10 or 3.11
+- **Port:** `8080` or a platform-provided `PORT`
+- **API key:** valid CoinMarketCap Pro credential
+- **Dependencies:** from `requirements.txt`
 
-### Requirements
-
-- Python 3.10 or 3.11
-- Port availability on `8080` or a custom `PORT` value
-- CoinMarketCap Pro API key
-- Dependencies from `requirements.txt`
-
-Core Python requirements:
+### Core packages
 
 - `fastmcp>=2.0.0`
 - `mcp>=2.0.0`
@@ -55,53 +39,48 @@ Core Python requirements:
 
 ---
 
-## 3. Environment Configuration
+## 3. Environment configuration
 
-Create a `.env` file from the example file in the project root.
+Create the deployment environment file at the project root:
 
 ```bash
 cp .env.example .env
 ```
 
-Example environment file:
+Example `.env`:
 
 ```ini
-# Required: CoinMarketCap API key
 CMC_API_KEY=your_coinmarketcap_api_key_here
-
-# Optional for local AI eval/test workflows
 OPENAI_API_KEY=your_openai_api_key_here
 MODEL_BASE_URL=https://api.openai.com/v1
 
-# CoinMarketCap API settings
 CMC_BASE_URL=https://pro-api.coinmarketcap.com
 CMC_TIMEOUT_SECONDS=10.0
 CMC_RATE_LIMIT_PER_MINUTE=30
 CMC_MAX_RETRIES=3
 CMC_RETRY_BACKOFF_BASE_SECONDS=1.0
 
-# Server binding settings
 PORT=8080
 HOST=0.0.0.0
 ```
 
-### Important notes
+### Required settings
 
-- `CMC_API_KEY` is mandatory for live tool calls.
-- `PORT` controls the exposed local or container HTTP port.
-- `HOST=0.0.0.0` makes the service reachable from container or cloud deployment environments.
+- **`CMC_API_KEY`** — required for all live market calls
+- **`PORT`** — required for deployment platforms
+- **`HOST`** — should be `0.0.0.0` for containerized deployment
 
 ---
 
-## 4. Local Development Setup
+## 4. Local run instructions
 
-### Step 1: Install dependencies
+### Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Step 2: Start the FastMCP server
+### Start the server
 
 ```bash
 python -m app.server
@@ -110,7 +89,6 @@ python -m app.server
 ### Expected startup output
 
 ```text
-Starting user MCP on port 8080...
 INFO     Starting MCP server 'CMC Real-World Asset Intelligence' with transport 'http' (stateless) on http://0.0.0.0:8080/mcp
 INFO:    Started server process [5]
 INFO:    Waiting for application startup.
@@ -118,17 +96,15 @@ INFO:    Application startup complete.
 INFO:    Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
 ```
 
-The server should serve MCP traffic on:
+The local endpoint is:
 
 ```text
 http://127.0.0.1:8080/mcp
 ```
 
-When deployed publicly, the same endpoint is exposed through the production URL.
-
 ---
 
-## 5. Docker Deployment
+## 5. Docker deployment
 
 ### Dockerfile
 
@@ -151,15 +127,10 @@ EXPOSE 8080
 CMD ["python", "-m", "app.server"]
 ```
 
-### Build image
+### Build and run
 
 ```bash
 docker build -t cmc-rwa-mcp:latest .
-```
-
-### Run container
-
-```bash
 docker run -d \
   --name cmc-mcp-server \
   -p 8080:8080 \
@@ -167,118 +138,91 @@ docker run -d \
   cmc-rwa-mcp:latest
 ```
 
-This container starts the same FastMCP server with the same environment variables and tool set.
-
 ---
 
-## 6. Production Hosting Options
+## 6. Production hosting options
 
-### Option A: FastMCP Cloud / Prefect Horizon
-
-Deploy directly using the FastMCP CLI:
+### Option A — FastMCP Cloud / Prefect Horizon
 
 ```bash
 fastmcp deploy app/server.py:mcp --name "cmc-rwa-intelligence"
 ```
 
-This is the cleanest path when deploying a FastMCP-native service with remote MCP access.
+### Option B — Railway / Render / Fly.io / any PaaS
 
-### Option B: Railway / Render / Fly.io / Similar PaaS
-
-1. Push the repository to GitHub.
-2. Connect the repo to your hosting platform.
-3. Set build command:
+1. Connect the GitHub repo to the hosting platform.
+2. Set the build command:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-4. Set start command:
+3. Set the start command:
 
 ```bash
 python -m app.server
 ```
 
-5. Add environment variable:
+4. Configure environment variable:
 
 ```bash
 CMC_API_KEY=your_coinmarketcap_api_key_here
 ```
 
-6. Ensure the service health endpoint points to:
-
-```text
-GET /
-```
-
-7. Confirm the app exposes port `8080` or the provider's configured `PORT` value.
+5. Ensure the root health endpoint is exposed and reachable over `GET /`.
 
 ---
 
-## 7. Production Health Checks
+## 7. Health checks and validation
 
-### Check root endpoint
+### Root health check
 
 ```bash
 curl -i https://cmcserver.fastmcp.app/
 ```
 
-Expected response:
+Expected result:
 
 ```text
 HTTP/1.1 200 OK
 ```
 
-This confirms the service is alive and reachable.
-
-### Verify MCP endpoint
+### MCP endpoint validation
 
 ```bash
 curl -I https://cmcserver.fastmcp.app/mcp
 ```
 
-You should receive an HTTP success response from the deployed MCP endpoint.
+---
+
+## 8. Operational notes
+
+### Resolution fallback behavior
+
+The server supports a two-step asset lookup path:
+
+1. direct symbol lookup
+2. issuer token scan and parent `rwa_id` mapping
+
+This is the reason a token such as `PAXG` can resolve back to parent asset `GOLD` with `rwa_id = 1`.
+
+### Comparison semantics
+
+The comparison engine records whether the RWA object is a specific token or an aggregate market asset by setting the `is_specific_token` flag.
+
+### Compliance and attestation awareness
+
+Issuer metadata is surfaced in a way that supports institutional evaluation, including reserve attestation, custody structure, and regulatory context.
 
 ---
 
-## 8. Security Notes
+## 9. Recommended deployment checklist
 
-- Never hardcode API keys in the repository.
-- Use environment variables or secret stores in production.
-- Validate that the upstream `X-CMC_PRO_API_KEY` header matches the target API key exactly.
-- Restrict access to deployment endpoints using platform-level auth if needed.
+- [ ] `CMC_API_KEY` set in deployment environment
+- [ ] `PORT` configured correctly
+- [ ] `/` returns `200 OK`
+- [ ] `/mcp` is reachable
+- [ ] `X-CMC_PRO_API_KEY` passed by each client
+- [ ] Logs do not expose sensitive data
 
----
-
-## 9. Production Deployment Summary
-
-This project is designed for a production-ready MCP deployment pattern:
-
-- a lightweight FastMCP server,
-- stateless request handling,
-- per-request API-key authentication,
-- live CoinMarketCap integration,
-- remote HTTP connectivity for AI agents and clients.
-
-The live production service is already available at:
-
-```text
-https://cmcserver.fastmcp.app/mcp
-```
-
-For remote AI clients, connect using the `X-CMC_PRO_API_KEY` header with your CoinMarketCap Pro key.
-
----
-
-## 10. Recommended Deployment Checklist
-
-Before production rollout, confirm the following:
-
-- [ ] `CMC_API_KEY` is set in the deployment environment
-- [ ] `PORT` is configured correctly for the hosting platform
-- [ ] Health route `/` returns `200 OK`
-- [ ] MCP endpoint `/mcp` is reachable
-- [ ] Authentication header `X-CMC_PRO_API_KEY` is passed on every client request
-- [ ] Logs are clean and no secrets are printed to stdout
-
-This is the stable deployment path for the live market intelligence MCP server.
+This is the stable production deployment pattern for the live market intelligence MCP server.
