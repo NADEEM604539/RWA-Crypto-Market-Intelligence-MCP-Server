@@ -1,14 +1,15 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field
 
 
-# --- Standard CMC Status Meta Header ---
+# --- Common response metadata ---
 class CMCStatus(BaseModel):
-    timestamp: str
-    error_code: int
-    error_message: Optional[str] = ""
-    elapsed: int
-    credit_count: int
+    timestamp: Optional[str] = None
+    error_code: int = 0
+    error_message: Optional[str] = None
+    elapsed: Optional[int] = None
+    credit_count: Optional[int] = None
     notice: Optional[str] = None
 
 
@@ -23,8 +24,8 @@ class RWAQuoteUSD(BaseModel):
 
 
 class RWATokenDetail(BaseModel):
-    symbol: str
-    name: str
+    symbol: Optional[str] = None
+    name: Optional[str] = None
     price: Optional[float] = None
     crypto_id: Optional[int] = None
     issuer_id: Optional[str] = None
@@ -46,11 +47,11 @@ class TradFiMarket(BaseModel):
 
 
 class RWAAsset(BaseModel):
-    rwa_id: int
-    name: str
-    symbol: str
-    slug: str
-    asset_type: str
+    rwa_id: Optional[int] = None
+    name: Optional[str] = None
+    symbol: Optional[str] = None
+    slug: Optional[str] = None
+    asset_type: Optional[str] = None
     rwa_rank: Optional[int] = None
     has_tokens: bool = True
     average_tokenized_price: Optional[float] = None
@@ -73,8 +74,8 @@ class RWAQuotesResponse(BaseModel):
 
 # --- Issuer Schemas ---
 class RWAIssuer(BaseModel):
-    issuer_id: str
-    name: str
+    issuer_id: Optional[str] = None
+    name: Optional[str] = None
     website: Optional[str] = None
     logo: Optional[str] = None
     num_tokens: int = 0
@@ -93,28 +94,53 @@ class RWAIssuersResponse(BaseModel):
 
 # --- Crypto & Global Market Schemas ---
 class CryptoQuoteUSD(BaseModel):
-    price: float
-    volume_24h: float
+    price: Optional[float] = None
+    volume_24h: Optional[float] = None
     percent_change_24h: Optional[float] = None
-    market_cap: float
+    market_cap: Optional[float] = None
     last_updated: Optional[str] = None
 
 
 class CryptoAssetData(BaseModel):
-    id: int
-    name: str
-    symbol: str
-    quote: dict  # Contains dict mapping currency e.g., {"USD": CryptoQuoteUSD}
+    id: Optional[int] = None
+    name: Optional[str] = None
+    symbol: Optional[str] = None
+    quote: Dict[str, CryptoQuoteUSD] = Field(default_factory=dict)
+
+
+class CryptoQuotesResponseData(BaseModel):
+    __root__: Dict[str, CryptoAssetData] = Field(default_factory=dict)
+
+    def model_dump(self, *args, **kwargs):
+        data = super().model_dump(*args, **kwargs)
+        if isinstance(data, dict):
+            return data.get("__root__", data)
+        return data
+
+
+class CryptoQuotesResponse(BaseModel):
+    data: CryptoQuotesResponseData
+    status: CMCStatus
 
 
 class GlobalMetricsQuoteUSD(BaseModel):
-    total_market_cap: float
-    total_volume_24h: float
+    total_market_cap: Optional[float] = None
+    total_volume_24h: Optional[float] = None
     last_updated: Optional[str] = None
 
 
 class GlobalMetricsData(BaseModel):
-    btc_dominance: float
-    eth_dominance: float
-    active_cryptocurrencies: int
-    quote: dict
+    btc_dominance: Optional[float] = None
+    eth_dominance: Optional[float] = None
+    active_cryptocurrencies: Optional[int] = None
+    quote: Dict[str, GlobalMetricsQuoteUSD] = Field(default_factory=dict)
+
+
+class GlobalMetricsResponse(BaseModel):
+    data: GlobalMetricsData
+    status: CMCStatus
+
+
+class CMCResponseEnvelope(BaseModel):
+    data: Dict[str, Any] = Field(default_factory=dict)
+    status: CMCStatus
