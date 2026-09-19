@@ -110,22 +110,38 @@ class CryptoAssetData(BaseModel):
 
 def _normalize_crypto_quotes_data(value: Any) -> Any:
     """
-    CMC's /v3/cryptocurrency/quotes/latest sometimes returns data[SYMBOL] as a
-    list instead of a single object (e.g. when duplicate tickers exist across
-    different chains/issuers). Normalize each entry to a single dict (the
-    first element) before Pydantic validates it as CryptoAssetData, so a list
-    response no longer raises a dict_type validation error.
-    """
-    if not isinstance(value, dict):
-        return value
+    CMC's /v3/cryptocurrency/quotes/latest data field is inconsistent across
+    response variants:
+      - Usually a dict keyed by symbol: {"BTC": {...}}
+      - Sometimes data[SYMBOL] itself is a list instead of a dict (duplicate
+        tickers across chains/issuers): {"BTC": [{...}, {...}]}
+      - Sometimes the whole `data` payload is a bare list of asset objects
+        rather than being keyed by symbol at all: [{...}, {...}]
 
-    normalized: Dict[str, Any] = {}
-    for key, entry in value.items():
-        if isinstance(entry, list):
-            normalized[key] = entry[0] if entry else {}
-        else:
-            normalized[key] = entry
-    return normalized
+    Normalize all of these into a single Dict[str, dict] keyed by uppercase
+    symbol, so Pydantic always sees a plain dict before validating each
+    value as CryptoAssetData.
+    """
+    if isinstance(value, dict):
+        normalized: Dict[str, Any] = {}
+        for key, entry in value.items():
+            if isinstance(entry, list):
+                normalized[key] = entry[0] if entry else {}
+            else:
+                normalized[key] = entry
+        return normalized
+
+    if isinstance(value, list):
+        normalized = {}
+        for entry in value:
+            if not isinstance(entry, dict):
+                continue
+            symbol = str(entry.get("symbol") or entry.get("id") or len(normalized)).upper()
+            # Keep the first occurrence per symbol rather than overwriting.
+            normalized.setdefault(symbol, entry)
+        return normalized
+
+    return value
 
 
 class CryptoQuotesResponseData(BaseModel):

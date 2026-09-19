@@ -7,19 +7,25 @@ from app.tools.resolve_rwa_asset import resolve_rwa_asset
 # does not resolve via a plain symbol lookup. Maps the ticker a user would
 # naturally type to the ticker/key CMC actually indexes it under.
 #
-# BUIDL (BlackRock's USD Institutional Digital Liquidity Fund) has no
-# standalone primary listing in CMC's RWA categories as of this writing, so
-# it is proxied to Ondo's OUSG (Short-Term US Government Bond Fund), the
-# closest tracked tokenized-treasury instrument. Swap this to a direct
-# BUIDL mapping the moment CMC indexes it natively.
-RWA_SYMBOL_ALIASES: Dict[str, str] = {
-    "BUIDL": "OUSG",    # BlackRock BUIDL -> proxied via Ondo's tokenized treasury fund
-    "USDY": "USDY",     # Ondo USD Yield
-    "OUSG": "OUSG",      # Ondo Short-Term US Government Bond Fund
-}
+# NOTE: As verified against the live RWA issuer registry, neither BUIDL,
+# OUSG, nor USDY currently resolve as standalone RWA symbols or via the
+# token-symbol fallback search in this dataset -- there is no BlackRock
+# issuer entry at all, and Ondo Assets' 551 tokens are not addressable by
+# these tickers through the exposed lookup path. Rather than proxy to
+# another symbol that also fails (which previously produced a confusing
+# double failure), these are left unmapped so the fallback error below is
+# accurate. Populate this dict with a *verified working* alias as soon as
+# one is confirmed (e.g. by inspecting Ondo Assets' token list directly via
+# the issuer-detail lookup, which is not currently exposed as an MCP tool).
+RWA_SYMBOL_ALIASES: Dict[str, str] = {}
 
-# Symbols we can confidently support / suggest when resolution fails.
-SUPPORTED_RWA_SYMBOLS = sorted(set(RWA_SYMBOL_ALIASES.values()) | {"GOLD", "PAXG", "XAUT"})
+# Identifiers verified to resolve against the live RWA dataset.
+SUPPORTED_RWA_SYMBOLS = ["GOLD", "PAXG", "XAUT", "XAUM", "CGO", "VNXAU"]
+
+# Institutional tickers known to be requested but NOT currently indexed by
+# this data source, surfaced separately so the error message is honest
+# instead of implying they're supported.
+KNOWN_UNTRACKED_IDENTIFIERS = ["BUIDL", "OUSG", "USDY"]
 
 
 async def get_rwa_market_quote(identifier: str, api_key: str) -> Dict[str, Any]:
@@ -41,9 +47,17 @@ async def get_rwa_market_quote(identifier: str, api_key: str) -> Dict[str, Any]:
         else:
             resolved = await resolve_rwa_asset(search_target, api_key=api_key)
             if resolved.get("error") or resolved.get("rwa_id") is None:
+                hint = None
+                if clean_id in KNOWN_UNTRACKED_IDENTIFIERS:
+                    hint = (
+                        f"'{clean_id}' is a known institutional/treasury ticker that is not "
+                        "currently indexed by this data source (no matching issuer or token "
+                        "record found). This is not a lookup bug -- the data simply isn't tracked yet."
+                    )
                 return {
                     "resolved": False,
                     "error": resolved.get("error", f"No market quote found for identifier '{identifier}'."),
+                    "hint": hint,
                     "requested_identifier": identifier,
                     "normalized_identifier": clean_id,
                     "supported_identifiers": SUPPORTED_RWA_SYMBOLS,
@@ -70,6 +84,8 @@ async def get_rwa_market_quote(identifier: str, api_key: str) -> Dict[str, Any]:
                 f"'{clean_id}' has no standalone primary listing in CMC's RWA data; "
                 f"showing proxied data for '{search_target}' instead."
             )
+            # NOTE: with RWA_SYMBOL_ALIASES currently empty, this branch is
+            # unreachable until a verified alias is added above.
 
         return {
             "resolved": True,
