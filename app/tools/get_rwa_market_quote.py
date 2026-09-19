@@ -20,6 +20,17 @@ def _is_gold_asset(parent_symbol: Optional[str], parent_name: Optional[str]) -> 
     return "GOLD" in haystack or "XAU" in haystack
 
 
+def _volume_to_market_cap(volume: Any, market_cap: Any) -> Optional[float]:
+    """V/MC liquidity (turnover) ratio as a fraction, e.g. 0.0332 == 3.32%.
+    None when market cap is missing or zero, so a ratio is never fabricated."""
+    try:
+        mcap = float(market_cap) if market_cap is not None else 0.0
+        vol = float(volume) if volume is not None else 0.0
+    except (TypeError, ValueError):
+        return None
+    return round(vol / mcap, 6) if mcap > 0 else None
+
+
 def _annotate_token_unit(token: Dict[str, Any], is_gold: bool) -> Dict[str, Any]:
     """Tag a gold token with its likely price unit (gram vs troy ounce) and
     add a normalized per-troy-ounce price so callers can compare tokens on
@@ -103,7 +114,7 @@ async def get_rwa_market_quote(identifier: str, api_key: str) -> Dict[str, Any]:
         else:
             resolved = await resolve_rwa_asset(search_target, api_key=api_key)
             if resolved.get("error") or resolved.get("rwa_id") is None:
-                hint = None
+                hint = resolved.get("hint")
                 if clean_id in KNOWN_UNTRACKED_IDENTIFIERS:
                     hint = (
                         f"'{clean_id}' is a known institutional/treasury ticker that is not "
@@ -135,6 +146,32 @@ async def get_rwa_market_quote(identifier: str, api_key: str) -> Dict[str, Any]:
         quotes = (asset.get("quotes") or [{}])[0]
         is_gold = _is_gold_asset(asset.get("symbol"), asset.get("name"))
 
+        token_rows = [
+            _annotate_token_unit(
+                {
+                    "symbol": t.get("symbol"),
+                    "name": t.get("name"),
+                    "price_usd": t.get("price"),
+                    "issuer_name": t.get("issuer_name"),
+                    "market_cap_usd": t.get("market_cap"),
+                    "volume_24h_usd": t.get("volume_24h"),
+                    "volume_to_market_cap_ratio": _volume_to_market_cap(
+                        t.get("volume_24h"), t.get("market_cap")
+                    ),
+                },
+                is_gold=is_gold,
+            )
+            for t in asset.get("tokens", [])
+        ]
+
+        # When the caller asked for a specific token (e.g. PAXG), surface that
+        # token's own record so it isn't buried inside the parent aggregate.
+        requested_symbols = {clean_id, search_target}
+        requested_token = next(
+            (row for row in token_rows if str(row.get("symbol") or "").upper() in requested_symbols),
+            None,
+        )
+
         proxy_note = None
         if clean_id != search_target:
             proxy_note = (
@@ -154,21 +191,12 @@ async def get_rwa_market_quote(identifier: str, api_key: str) -> Dict[str, Any]:
             "average_tokenized_price_usd": quotes.get("average_tokenized_price"),
             "tokenized_market_cap_usd": quotes.get("tokenized_market_cap"),
             "tokenized_volume_24h_usd": quotes.get("tokenized_volume_24h"),
-            "tokens_count": len(asset.get("tokens", [])),
-            "tokens": [
-                _annotate_token_unit(
-                    {
-                        "symbol": t.get("symbol"),
-                        "name": t.get("name"),
-                        "price_usd": t.get("price"),
-                        "issuer_name": t.get("issuer_name"),
-                        "market_cap_usd": t.get("market_cap"),
-                        "volume_24h_usd": t.get("volume_24h"),
-                    },
-                    is_gold=is_gold,
-                )
-                for t in asset.get("tokens", [])
-            ],
+            "volume_to_market_cap_ratio": _volume_to_market_cap(
+                quotes.get("tokenized_volume_24h"), quotes.get("tokenized_market_cap")
+            ),
+            "tokens_count": len(token_rows),
+            "requested_token": requested_token,
+            "tokens": token_rows,
             "tradfi_markets": asset.get("tradfi_markets", []),
             "last_updated": quotes.get("last_updated"),
             "resolved_via": resolved.get("resolved_via") if resolved else "rwa_id",
