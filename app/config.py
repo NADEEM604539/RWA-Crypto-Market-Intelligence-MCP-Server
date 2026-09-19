@@ -9,9 +9,7 @@ load_dotenv(ROOT_DIR / ".env")
 
 
 class Settings(BaseSettings):
-    CMC_API_KEY: str = Field(..., description="CoinMarketCap API Key")
     OPENAI_API_KEY: Optional[str] = Field(default=None, description="OpenAI API Key (Optional)")
-    
     CMC_BASE_URL: str = Field(default="https://pro-api.coinmarketcap.com")
     CMC_TIMEOUT_SECONDS: float = Field(default=10.0)
 
