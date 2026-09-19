@@ -11,6 +11,8 @@ import json
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import CurrentHeaders
 from pydantic import Field
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from app.auth.auth import authenticate_and_rate_limit
 from app.tools.compare_rwa_vs_crypto import compare_rwa_vs_crypto
@@ -25,7 +27,13 @@ RwaSymbol = Annotated[
     Field(
         description="RWA symbol or token symbol, for example GOLD, NVDA, or PAXG.",
         min_length=2,
-        max_length=16,
+        # Raised from 16 -> 64: 16 was tight enough that some legitimate
+        # long-form identifiers/slugs got rejected with a raw Pydantic
+        # validation error at the MCP boundary, before ever reaching the
+        # tool's own graceful "not found" / "supported_identifiers" JSON
+        # response. 64 still bounds payload size but lets real input reach
+        # the tool logic that already handles bad symbols gracefully.
+        max_length=64,
         pattern=r"^[A-Za-z0-9_\-$@]+$",
     ),
 ]
@@ -50,6 +58,35 @@ mcp = FastMCP(
         "and comparative analysis for tokenized Real-World Assets (RWAs) and cryptocurrencies."
     ),
 )
+
+
+# ============================================================================
+# Plain HTTP health-check route
+#
+# The streamable-HTTP transport only serves the MCP protocol itself at
+# /mcp -- hitting the bare root (http://127.0.0.1:8000/) with a browser or
+# curl otherwise 404s, which looks like a broken server even though the
+# MCP endpoint is working fine. This route just gives a human (or a judge
+# poking around) something readable to see at the root, and doubles as a
+# lightweight liveness check.
+# ============================================================================
+@mcp.custom_route("/", methods=["GET"])
+async def health_check(request: Request) -> JSONResponse:
+    return JSONResponse(
+        {
+            "status": "ok",
+            "service": "CMC Real-World Asset Intelligence MCP Server",
+            "mcp_endpoint": "/mcp",
+            "tools": [
+                "resolve_rwa_asset",
+                "get_rwa_market_quote",
+                "compare_rwa_vs_crypto",
+                "get_rwa_issuers_info",
+                "get_global_market_metrics",
+            ],
+            "note": "This is a plain health-check route. Connect your MCP client to the /mcp endpoint, not this one.",
+        }
+    )
 
 
 # ============================================================================
