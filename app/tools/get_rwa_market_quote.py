@@ -4,7 +4,7 @@ from app.cmc.client import cmc_client
 from app.tools.resolve_rwa_asset import resolve_rwa_asset
 
 
-async def get_rwa_market_quote(identifier: str) -> Dict[str, Any]:
+async def get_rwa_market_quote(identifier: str, api_key: str) -> Dict[str, Any]:
     """
     Fetches the latest aggregate market metrics for an RWA asset or token symbol.
 
@@ -15,15 +15,15 @@ async def get_rwa_market_quote(identifier: str) -> Dict[str, Any]:
         resolved = None
 
         if clean_id.isdigit():
-            data = await cmc_client.get_rwa_quotes(rwa_id=clean_id)
+            data = await cmc_client.get_rwa_quotes(api_key=api_key, rwa_id=clean_id)
         else:
-            resolved = await resolve_rwa_asset(clean_id)
+            resolved = await resolve_rwa_asset(clean_id, api_key=api_key)
             if resolved.get("error"):
                 return {"error": resolved["error"]}
             rwa_id = resolved.get("rwa_id")
             if rwa_id is None:
                 return {"error": f"No market quote found for identifier '{identifier}'."}
-            data = await cmc_client.get_rwa_quotes(rwa_id=str(rwa_id))
+            data = await cmc_client.get_rwa_quotes(api_key=api_key, rwa_id=str(rwa_id))
 
         rwa_assets = data.get("rwa_assets", [])
         if not rwa_assets:

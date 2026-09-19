@@ -89,14 +89,14 @@ def _normalize_crypto_payload(payload: Any, symbol: str) -> Dict[str, Any]:
     return {}
 
 
-async def compare_rwa_vs_crypto(rwa_symbol: str, crypto_symbol: str) -> Dict[str, Any]:
+async def compare_rwa_vs_crypto(rwa_symbol: str, crypto_symbol: str, api_key: str) -> Dict[str, Any]:
     """Compare a specific RWA token or parent RWA asset against a cryptocurrency."""
     try:
         clean_rwa = rwa_symbol.strip().upper()
         clean_crypto = crypto_symbol.strip().upper()
 
-        # 1. Resolve RWA Metadata
-        resolved_rwa = await resolve_rwa_asset(clean_rwa)
+        # 1. Resolve RWA Metadata using provided api_key
+        resolved_rwa = await resolve_rwa_asset(clean_rwa, api_key=api_key)
         if isinstance(resolved_rwa, list):
             resolved_rwa = resolved_rwa[0] if resolved_rwa else {}
         if not isinstance(resolved_rwa, dict) or resolved_rwa.get("error"):
@@ -106,10 +106,10 @@ async def compare_rwa_vs_crypto(rwa_symbol: str, crypto_symbol: str) -> Dict[str
         if rwa_id is None:
             return {"error": f"RWA asset '{clean_rwa}' not found."}
 
-        # 2. Fetch Data Concurrently
+        # 2. Fetch Data Concurrently using provided api_key
         rwa_res, crypto_res = await asyncio.gather(
-            cmc_client.get_rwa_quotes(rwa_id=str(rwa_id)),
-            cmc_client.get_crypto_quotes(symbol=clean_crypto),
+            cmc_client.get_rwa_quotes(api_key=api_key, rwa_id=str(rwa_id)),
+            cmc_client.get_crypto_quotes(api_key=api_key, symbol=clean_crypto),
             return_exceptions=True,
         )
 

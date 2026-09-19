@@ -8,19 +8,20 @@ from app.utils.cache import shared_cache
 _CACHE_TTL_SECONDS = 300.0
 
 
-async def get_rwa_issuers_info(limit: int = 50) -> Dict[str, Any]:
+async def get_rwa_issuers_info(api_key: str, limit: int = 50) -> Dict[str, Any]:
     """
     Fetches the verified list of official Real-World Asset (RWA) token issuers
     (e.g., Backed Assets, Backpack, Paxos, Tether) and token counts managed.
 
     Args:
+        api_key: CoinMarketCap API key for authentication.
         limit: Number of issuers to retrieve (default: 50, max: 250).
     """
     try:
         cache_key = f"rwa_issuers_info:{limit}"
 
         async def _fetch() -> Dict[str, Any]:
-            data = await cmc_client.get_rwa_issuers_list(limit=limit)
+            data = await cmc_client.get_rwa_issuers_list(api_key=api_key, limit=limit)
             issuers = data.get("issuers", [])
 
             formatted_issuers = [

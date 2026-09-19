@@ -9,7 +9,7 @@ _CACHE_KEY = "global_market_metrics"
 _CACHE_TTL_SECONDS = 120.0
 
 
-async def get_global_market_metrics() -> Dict[str, Any]:
+async def get_global_market_metrics(api_key: str) -> Dict[str, Any]:
     """
     Fetches global market indicators including Bitcoin dominance, total market cap,
     24h volume, and overall crypto market statistics.
@@ -19,7 +19,7 @@ async def get_global_market_metrics() -> Dict[str, Any]:
     """
     try:
         async def _fetch() -> Dict[str, Any]:
-            data = await cmc_client.get_global_metrics()
+            data = await cmc_client.get_global_metrics(api_key=api_key)
             quotes = data.get("quote", {}).get("USD", {})
             return {
                 "btc_dominance": data.get("btc_dominance"),
