@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # --- Common response metadata ---
@@ -108,13 +108,49 @@ class CryptoAssetData(BaseModel):
     quote: Dict[str, CryptoQuoteUSD] = Field(default_factory=dict)
 
 
+def _normalize_crypto_quotes_data(value: Any) -> Any:
+    """
+    CMC's /v3/cryptocurrency/quotes/latest sometimes returns data[SYMBOL] as a
+    list instead of a single object (e.g. when duplicate tickers exist across
+    different chains/issuers). Normalize each entry to a single dict (the
+    first element) before Pydantic validates it as CryptoAssetData, so a list
+    response no longer raises a dict_type validation error.
+    """
+    if not isinstance(value, dict):
+        return value
+
+    normalized: Dict[str, Any] = {}
+    for key, entry in value.items():
+        if isinstance(entry, list):
+            normalized[key] = entry[0] if entry else {}
+        else:
+            normalized[key] = entry
+    return normalized
+
+
 class CryptoQuotesResponseData(BaseModel):
     data: Dict[str, CryptoAssetData] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_list_entries(cls, values: Any) -> Any:
+        if isinstance(values, dict) and "data" in values:
+            values = dict(values)
+            values["data"] = _normalize_crypto_quotes_data(values.get("data"))
+        return values
 
 
 class CryptoQuotesResponse(BaseModel):
     data: Dict[str, CryptoAssetData] = Field(default_factory=dict)
     status: CMCStatus
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_list_entries(cls, values: Any) -> Any:
+        if isinstance(values, dict) and "data" in values:
+            values = dict(values)
+            values["data"] = _normalize_crypto_quotes_data(values.get("data"))
+        return values
 
 
 class GlobalMetricsQuoteUSD(BaseModel):
