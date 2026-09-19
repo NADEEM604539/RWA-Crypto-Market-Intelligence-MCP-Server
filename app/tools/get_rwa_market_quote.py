@@ -3,36 +3,63 @@ from typing import Any, Dict
 from app.cmc.client import cmc_client
 from app.tools.resolve_rwa_asset import resolve_rwa_asset
 
+# Known institutional / alternatively-indexed RWA tickers that CoinMarketCap
+# does not resolve via a plain symbol lookup. Maps the ticker a user would
+# naturally type to the ticker/key CMC actually indexes it under.
+RWA_SYMBOL_ALIASES: Dict[str, str] = {
+    "BUIDL": "BUIDL",   # BlackRock USD Institutional Digital Liquidity Fund
+    "USDY": "USDY",     # Ondo USD Yield
+    "OUSG": "OUSG",      # Ondo Short-Term US Government Bond Fund
+}
+
+# Symbols we can confidently support / suggest when resolution fails.
+SUPPORTED_RWA_SYMBOLS = sorted(set(RWA_SYMBOL_ALIASES.values()) | {"GOLD", "PAXG", "XAUT"})
+
 
 async def get_rwa_market_quote(identifier: str, api_key: str) -> Dict[str, Any]:
     """
     Fetches the latest aggregate market metrics for an RWA asset or token symbol.
 
     Token symbols like PAXG resolve to their parent RWA asset before the quote is fetched.
+    Known institutional tickers (e.g. BUIDL, USDY, OUSG) are resolved via
+    RWA_SYMBOL_ALIASES before being sent upstream.
     """
     try:
-        clean_id = identifier.strip()
+        clean_id = identifier.strip().upper()
+        search_target = RWA_SYMBOL_ALIASES.get(clean_id, clean_id)
+
         resolved = None
 
-        if clean_id.isdigit():
-            data = await cmc_client.get_rwa_quotes(api_key=api_key, rwa_id=clean_id)
+        if search_target.isdigit():
+            data = await cmc_client.get_rwa_quotes(api_key=api_key, rwa_id=search_target)
         else:
-            resolved = await resolve_rwa_asset(clean_id, api_key=api_key)
-            if resolved.get("error"):
-                return {"error": resolved["error"]}
+            resolved = await resolve_rwa_asset(search_target, api_key=api_key)
+            if resolved.get("error") or resolved.get("rwa_id") is None:
+                return {
+                    "resolved": False,
+                    "error": resolved.get("error", f"No market quote found for identifier '{identifier}'."),
+                    "requested_identifier": identifier,
+                    "normalized_identifier": clean_id,
+                    "supported_identifiers": SUPPORTED_RWA_SYMBOLS,
+                }
             rwa_id = resolved.get("rwa_id")
-            if rwa_id is None:
-                return {"error": f"No market quote found for identifier '{identifier}'."}
             data = await cmc_client.get_rwa_quotes(api_key=api_key, rwa_id=str(rwa_id))
 
         rwa_assets = data.get("rwa_assets", [])
         if not rwa_assets:
-            return {"error": f"No market quote found for identifier '{identifier}'."}
+            return {
+                "resolved": False,
+                "error": f"No market quote found for identifier '{identifier}'.",
+                "requested_identifier": identifier,
+                "normalized_identifier": clean_id,
+                "supported_identifiers": SUPPORTED_RWA_SYMBOLS,
+            }
 
         asset = rwa_assets[0]
         quotes = (asset.get("quotes") or [{}])[0]
 
         return {
+            "resolved": True,
             "rwa_id": asset.get("rwa_id"),
             "name": asset.get("name"),
             "symbol": asset.get("symbol"),
@@ -57,4 +84,9 @@ async def get_rwa_market_quote(identifier: str, api_key: str) -> Dict[str, Any]:
             "resolved_via": resolved.get("resolved_via") if resolved else "rwa_id",
         }
     except Exception as e:
-        return {"error": f"Failed to fetch market quote for '{identifier}': {str(e)}"}
+        return {
+            "resolved": False,
+            "error": f"Failed to fetch market quote for '{identifier}': {str(e)}",
+            "requested_identifier": identifier,
+            "supported_identifiers": SUPPORTED_RWA_SYMBOLS,
+        }
