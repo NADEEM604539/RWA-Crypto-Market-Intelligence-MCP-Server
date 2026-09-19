@@ -107,6 +107,48 @@ class CryptoAssetData(BaseModel):
     symbol: Optional[str] = None
     quote: Dict[str, CryptoQuoteUSD] = Field(default_factory=dict)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_quote_field(cls, values: Any) -> Any:
+        """
+        The `quote` field is meant to be Dict[str, CryptoQuoteUSD] (e.g.
+        {"USD": {...}}), but this API sometimes returns it as a bare list
+        instead -- either a list containing one nested asset-like object
+        (with its own 'quote' key) or a list containing the currency-quote
+        fields directly. Normalize both shapes back into a proper dict
+        keyed by currency (defaulting to "USD") before validation.
+        """
+        if not isinstance(values, dict) or "quote" not in values:
+            return values
+
+        quote_value = values.get("quote")
+        if isinstance(quote_value, dict):
+            return values
+
+        values = dict(values)
+        if isinstance(quote_value, list):
+            if not quote_value:
+                values["quote"] = {}
+            else:
+                first = quote_value[0]
+                if isinstance(first, dict) and isinstance(first.get("quote"), (dict, list)):
+                    # Nested asset-shaped entry; recurse one level.
+                    nested = first["quote"]
+                    if isinstance(nested, list):
+                        nested = nested[0] if nested and isinstance(nested[0], dict) else {}
+                    values["quote"] = nested if isinstance(nested, dict) else {}
+                elif isinstance(first, dict) and any(k in first for k in ("USD", "EUR", "BTC")):
+                    # Already keyed by currency.
+                    values["quote"] = first
+                elif isinstance(first, dict):
+                    # Bare currency-quote fields (price, volume_24h, ...); assume USD.
+                    values["quote"] = {"USD": first}
+                else:
+                    values["quote"] = {}
+        else:
+            values["quote"] = {}
+        return values
+
 
 def _normalize_crypto_quotes_data(value: Any) -> Any:
     """
