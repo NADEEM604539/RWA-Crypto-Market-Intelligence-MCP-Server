@@ -13,6 +13,7 @@ from app.cmc.exceptions import (
 from app.cmc.schemas import (
     CryptoQuotesResponse,
     GlobalMetricsResponse,
+    RWAIssuerResponse,
     RWAQuotesResponse,
     RWAIssuersResponse,
 )
@@ -20,6 +21,22 @@ from app.config import settings
 from app.utils.cache import AsyncRateLimiter, TTLCache
 
 T = TypeVar("T", bound=BaseModel)
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Retry only transient failures: network errors, HTTP 429 and 5xx.
+
+    4xx client errors (400 unknown symbol, 401/403 bad key, 404) fail identically
+    on every retry, so retrying them only burns rate-limit budget and API credits
+    and adds seconds of backoff before the caller's fallback logic can run.
+    """
+    if isinstance(exc, httpx.RequestError):
+        return True
+    if isinstance(exc, CMCRateLimitError):
+        return True
+    if isinstance(exc, CMCApiError):
+        return exc.status_code >= 500
+    return False
 
 
 class CMCClient:
@@ -103,8 +120,8 @@ class CMCClient:
                     if use_cache and cache_key is not None:
                         await self._cache.set(cache_key, data, ttl_seconds=ttl_seconds)
                     return data
-                except (CMCRateLimitError, CMCUnauthorizedError, CMCApiError, httpx.RequestError):
-                    if attempt > settings.CMC_MAX_RETRIES:
+                except (CMCApiError, httpx.RequestError) as exc:
+                    if not _is_retryable(exc) or attempt > settings.CMC_MAX_RETRIES:
                         raise
                     await asyncio.sleep(settings.CMC_RETRY_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1)))
 
@@ -162,7 +179,7 @@ class CMCClient:
             api_key=api_key,
             path="/v5/real-world-assets/issuers",
             params=params,
-            response_model=RWAIssuersResponse,
+            response_model=RWAIssuerResponse,
             ttl_seconds=300.0,
             use_cache=True,
         )

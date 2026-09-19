@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # --- Common response metadata ---
@@ -89,6 +89,42 @@ class RWAIssuersResponseData(BaseModel):
 
 class RWAIssuersResponse(BaseModel):
     data: RWAIssuersResponseData
+    status: CMCStatus
+
+
+# --- Single-issuer schemas (GET /v5/real-world-assets/issuers) ---
+# The single-issuer endpoint does NOT return an `issuers` array like the list
+# endpoint does. `data` is a FLAT issuer object with a top-level `tokens` list:
+#   {"name": ..., "issuer_id": ..., "tokens": [{"symbol", "name", "crypto_id",
+#     "rwa_id"}], "num_tokens": ..., "total_size": ..., "has_more": ...}
+# Validating it with RWAIssuersResponse silently dropped `tokens` (Pydantic
+# ignores unknown fields by default), which left the token->parent-RWA index
+# empty and broke resolution of secondary symbols such as PAXG / XAUt.
+class RWAIssuerToken(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    symbol: Optional[str] = None
+    name: Optional[str] = None
+    crypto_id: Optional[int] = None
+    rwa_id: Optional[int] = None
+
+
+class RWAIssuerDetailData(BaseModel):
+    # extra="allow" so any field CMC adds later is preserved, not silently dropped.
+    model_config = ConfigDict(extra="allow")
+
+    issuer_id: Optional[str] = None
+    name: Optional[str] = None
+    website: Optional[str] = None
+    logo: Optional[str] = None
+    num_tokens: int = 0
+    tokens: List[RWAIssuerToken] = Field(default_factory=list)
+    total_size: int = 0
+    has_more: bool = False
+
+
+class RWAIssuerResponse(BaseModel):
+    data: RWAIssuerDetailData
     status: CMCStatus
 
 
