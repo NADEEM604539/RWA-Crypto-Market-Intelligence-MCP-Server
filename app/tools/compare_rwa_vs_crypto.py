@@ -153,6 +153,11 @@ async def fetch_rwa_data(symbol: str, api_key: str) -> Dict[str, Any]:
     """
     clean_symbol = symbol.strip().upper()
 
+    # Same fast-path as get_rwa_market_quote: reject symbols longer than any
+    # real RWA/token symbol before triggering a full issuer-list scan.
+    if len(clean_symbol) > 16:
+        return {"error": f"RWA identifier '{clean_symbol}' exceeds the maximum supported symbol length of 16 characters."}
+
     resolved = await resolve_rwa_asset(clean_symbol, api_key=api_key)
     if isinstance(resolved, list):
         resolved = resolved[0] if resolved else {}

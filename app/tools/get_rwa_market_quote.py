@@ -1,7 +1,47 @@
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from app.cmc.client import cmc_client
 from app.tools.resolve_rwa_asset import resolve_rwa_asset
+
+# Troy ounce <-> gram conversion.
+_GRAMS_PER_TROY_OUNCE = 31.1034768
+
+# 1 troy oz of gold has historically traded far above $500/unit while 1 gram
+# trades in the low hundreds, so this threshold cleanly separates the two
+# quoting conventions for gold-backed tokens specifically. This heuristic is
+# ONLY applied when the parent asset is actually gold -- applying a raw price
+# threshold across all RWA types (real estate, equities, etc.) would silently
+# mislabel unrelated assets, so it is intentionally scoped rather than global.
+_GOLD_PER_GRAM_USD_THRESHOLD = 500.0
+
+
+def _is_gold_asset(parent_symbol: Optional[str], parent_name: Optional[str]) -> bool:
+    haystack = f"{parent_symbol or ''} {parent_name or ''}".upper()
+    return "GOLD" in haystack or "XAU" in haystack
+
+
+def _annotate_token_unit(token: Dict[str, Any], is_gold: bool) -> Dict[str, Any]:
+    """Tag a gold token with its likely price unit (gram vs troy ounce) and
+    add a normalized per-troy-ounce price so callers can compare tokens on
+    equal footing. Non-gold assets are left untouched (unit: None) since we
+    have no reliable signal for their quoting convention."""
+    if not is_gold:
+        token["unit"] = None
+        token["normalized_price_per_oz_usd"] = None
+        return token
+
+    price = token.get("price_usd")
+    if price is None:
+        token["unit"] = "unknown"
+        token["normalized_price_per_oz_usd"] = None
+        return token
+
+    is_per_gram = price < _GOLD_PER_GRAM_USD_THRESHOLD
+    token["unit"] = "gram" if is_per_gram else "troy_ounce"
+    token["normalized_price_per_oz_usd"] = round(
+        price * _GRAMS_PER_TROY_OUNCE if is_per_gram else price, 2
+    )
+    return token
 
 # Known institutional / alternatively-indexed RWA tickers that CoinMarketCap
 # does not resolve via a plain symbol lookup. Maps the ticker a user would
@@ -38,6 +78,22 @@ async def get_rwa_market_quote(identifier: str, api_key: str) -> Dict[str, Any]:
     """
     try:
         clean_id = identifier.strip().upper()
+
+        # Fast-path rejection for identifiers that are syntactically valid
+        # (pass the MCP schema, max 64 chars) but are far longer than any
+        # real RWA/token symbol (all known symbols are <= 16 chars). This
+        # avoids burning a full issuer-list scan + API round trip in
+        # resolve_rwa_asset() on input that can never resolve, and returns
+        # the same graceful JSON shape as every other "not found" case.
+        if len(clean_id) > 16:
+            return {
+                "resolved": False,
+                "error": f"Identifier '{clean_id}' exceeds the maximum supported symbol length of 16 characters.",
+                "requested_identifier": identifier,
+                "normalized_identifier": clean_id,
+                "supported_identifiers": SUPPORTED_RWA_SYMBOLS,
+            }
+
         search_target = RWA_SYMBOL_ALIASES.get(clean_id, clean_id)
 
         resolved = None
@@ -77,6 +133,7 @@ async def get_rwa_market_quote(identifier: str, api_key: str) -> Dict[str, Any]:
 
         asset = rwa_assets[0]
         quotes = (asset.get("quotes") or [{}])[0]
+        is_gold = _is_gold_asset(asset.get("symbol"), asset.get("name"))
 
         proxy_note = None
         if clean_id != search_target:
@@ -99,14 +156,17 @@ async def get_rwa_market_quote(identifier: str, api_key: str) -> Dict[str, Any]:
             "tokenized_volume_24h_usd": quotes.get("tokenized_volume_24h"),
             "tokens_count": len(asset.get("tokens", [])),
             "tokens": [
-                {
-                    "symbol": t.get("symbol"),
-                    "name": t.get("name"),
-                    "price_usd": t.get("price"),
-                    "issuer_name": t.get("issuer_name"),
-                    "market_cap_usd": t.get("market_cap"),
-                    "volume_24h_usd": t.get("volume_24h"),
-                }
+                _annotate_token_unit(
+                    {
+                        "symbol": t.get("symbol"),
+                        "name": t.get("name"),
+                        "price_usd": t.get("price"),
+                        "issuer_name": t.get("issuer_name"),
+                        "market_cap_usd": t.get("market_cap"),
+                        "volume_24h_usd": t.get("volume_24h"),
+                    },
+                    is_gold=is_gold,
+                )
                 for t in asset.get("tokens", [])
             ],
             "tradfi_markets": asset.get("tradfi_markets", []),
