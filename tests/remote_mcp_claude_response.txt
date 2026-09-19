@@ -1,0 +1,364 @@
+Perform a multi-layered institutional cross-asset liquidity and structural audit comparing the tokenized gold RWA ecosystem (resolving token symbol 'PAXG') against primary crypto assets ('BTC' and 'ETH'), incorporating global market dominance context.
+
+Request
+
+{
+  "query": "compare RWA vs crypto market data"
+}
+
+Response
+
+Loaded 5 coinmarketcap tools:
+  coinmarketcap:compare_rwa_vs_crypto:
+    crypto_symbol: string - Crypto ticker symbol, for example BTC, ETH, SOL.
+    rwa_symbol: string - RWA symbol or token symbol, for example GOLD, NVDA, or PAXG.
+  coinmarketcap:get_global_market_metrics
+  coinmarketcap:get_rwa_market_quote:
+    identifier: string - RWA symbol or token symbol, for example GOLD, NVDA, or PAXG.
+  coinmarketcap:get_rwa_issuers_info:
+    limit?: integer
+  coinmarketcap:resolve_rwa_asset:
+    symbol: string - RWA symbol or token symbol, for example GOLD, NVDA, or PAXG.
+These tools are now available for you to call directly.
+
+<functions>
+<function>{"description": "Compare a tokenized RWA or parent RWA asset against a cryptocurrency by live market data.", "name": "coinmarketcap:compare_rwa_vs_crypto", "parameters": {"additionalProperties": false, "properties": {"crypto_symbol": {"description": "Crypto ticker symbol, for example BTC, ETH, SOL.", "maxLength": 10, "minLength": 2, "pattern": "^[A-Za-z0-9_\\-]+$", "type": "string"}, "rwa_symbol": {"description": "RWA symbol or token symbol, for example GOLD, NVDA, or PAXG.", "maxLength": 64, "minLength": 2, "pattern": "^[A-Za-z0-9_\\-$@]+$", "type": "string"}}, "required": ["crypto_symbol", "rwa_symbol"], "type": "object"}}</function>
+<function>{"description": "Retrieves macro crypto indicators including Bitcoin dominance and aggregate market cap.", "name": "coinmarketcap:get_global_market_metrics", "parameters": {"additionalProperties": false, "properties": {}, "type": "object"}}</function>
+<function>{"description": "Fetch aggregated price, market cap, volume, and token metadata for an RWA or tokenized RWA symbol.", "name": "coinmarketcap:get_rwa_market_quote", "parameters": {"additionalProperties": false, "properties": {"identifier": {"description": "RWA symbol or token symbol, for example GOLD, NVDA, or PAXG.", "maxLength": 64, "minLength": 2, "pattern": "^[A-Za-z0-9_\\-$@]+$", "type": "string"}}, "required": ["identifier"], "type": "object"}}</function>
+<function>{"description": "List registered token issuers and their token counts for the RWA market.", "name": "coinmarketcap:get_rwa_issuers_info", "parameters": {"additionalProperties": false, "properties": {"limit": {"default": 50, "maximum": 250, "minimum": 1, "type": "integer"}}, "type": "object"}}</function>
+<function>{"description": "Resolve a real-world asset or token symbol to the canonical parent RWA record.", "name": "coinmarketcap:resolve_rwa_asset", "parameters": {"additionalProperties": false, "properties": {"symbol": {"description": "RWA symbol or token symbol, for example GOLD, NVDA, or PAXG.", "maxLength": 64, "minLength": 2, "pattern": "^[A-Za-z0-9_\\-$@]+$", "type": "string"}}, "required": ["symbol"], "type": "object"}}</function>
+</functions>
+
+Request
+
+{
+  "symbol": "PAXG"
+}
+
+Response
+
+{
+  "rwa_id": 1,
+  "name": "Gold",
+  "symbol": "GOLD",
+  "slug": "gold",
+  "asset_type": "commodity",
+  "rwa_rank": 1,
+  "has_tokens": true,
+  "resolved_via": "token_symbol",
+  "matched_token": {
+    "symbol": "PAXG",
+    "name": "PAX Gold",
+    "crypto_id": 4705,
+    "issuer_id": "68904c24abae9b5b9fb35815",
+    "issuer_name": "Paxos"
+  }
+}
+
+Request
+
+{
+  "identifier": "PAXG"
+}
+
+Response
+
+{
+  "resolved": true,
+  "proxy_note": null,
+  "rwa_id": 1,
+  "name": "Gold",
+  "symbol": "GOLD",
+  "asset_type": "commodity",
+  "average_tokenized_price_usd": 4366.468313957764,
+  "tokenized_market_cap_usd": 4712246734.215921,
+  "tokenized_volume_24h_usd": 127169557.91431466,
+  "volume_to_market_cap_ratio": 0.026987,
+  "tokens_count": 7,
+  "requested_token": {
+    "symbol": "PAXG",
+    "name": "PAX Gold",
+    "price_usd": 4365.280185068282,
+    "issuer_name": "Paxos",
+    "market_cap_usd": 1896711479.54,
+    "volume_24h_usd": 62227747.49655269,
+    "volume_to_market_cap_ratio": 0.032808,
+    "unit": "troy_ounce",
+    "normalized_price_per_oz_usd": 4365.28
+  },
+  "tokens": [
+    {
+      "symbol": "PAXG",
+      "name": "PAX Gold",
+      "price_usd": 4365.280185068282,
+      "issuer_name": "Paxos",
+      "market_cap_usd": 1896711479.54,
+      "volume_24h_usd": 62227747.49655269,
+      "volume_to_market_cap_ratio": 0.032808,
+      "unit": "troy_ounce",
+      "normalized_price_per_oz_usd": 4365.28
+    },
+    {
+      "symbol": "XAUt",
+      "name": "Tether Gold",
+      "price_usd": 4374.0933223523325,
+      "issuer_name": "Tether Holdings",
+      "market_cap_usd": 2724288810.16,
+      "volume_24h_usd": 65822005.6145146,
+      "volume_to_market_cap_ratio": 0.024161,
+      "unit": "troy_ounce",
+      "normalized_price_per_oz_usd": 4374.09
+    },
+    {
+      "symbol": "XAUM",
+      "name": "Matrixdock Gold",
+      "price_usd": 4369.418353890339,
+      "issuer_name": "Matrixdock",
+      "market_cap_usd": 47955795.05,
+      "volume_24h_usd": 597450.78217597,
+      "volume_to_market_cap_ratio": 0.012458,
+      "unit": "troy_ounce",
+      "normalized_price_per_oz_usd": 4369.42
+    },
+    {
+      "symbol": "CGO",
+      "name": "Comtech Gold",
+      "price_usd": 138.94510994638262,
+      "issuer_name": "Comtech Gold",
+      "market_cap_usd": 19591260.5,
+      "volume_24h_usd": 920893.74497368,
+      "volume_to_market_cap_ratio": 0.047005,
+      "unit": "gram",
+      "normalized_price_per_oz_usd": 4321.68
+    },
+    {
+      "symbol": "VNXAU",
+      "name": "VNX Gold",
+      "price_usd": 138.151472521214,
+      "issuer_name": "VNX",
+      "market_cap_usd": 5816176.99,
+      "volume_24h_usd": 23392.26110408,
+      "volume_to_market_cap_ratio": 0.004022,
+      "unit": "gram",
+      "normalized_price_per_oz_usd": 4296.99
+    },
+    {
+      "symbol": "XAUT0",
+      "name": "Tether Gold Tokens",
+      "price_usd": 4367.452727217312,
+      "issuer_name": "Tether Holdings",
+      "market_cap_usd": 18062625.39,
+      "volume_24h_usd": 139995.99522062,
+      "volume_to_market_cap_ratio": 0.007751,
+      "unit": "troy_ounce",
+      "normalized_price_per_oz_usd": 4367.45
+    },
+    {
+      "symbol": "XAU",
+      "name": "Gold (Derivatives)",
+      "price_usd": 4379.754201873394,
+      "issuer_name": "NA (Derivatives)",
+      "market_cap_usd": 0.0,
+      "volume_24h_usd": 0.0,
+      "volume_to_market_cap_ratio": null,
+      "unit": "troy_ounce",
+      "normalized_price_per_oz_usd": 4379.75
+    }
+  ],
+  "tradfi_markets": [],
+  "last_updated": "2026-09-19T23:32:58.000Z",
+  "resolved_via": "token_symbol"
+}
+
+Request
+
+{
+  "crypto_symbol": "BTC",
+  "rwa_symbol": "PAXG"
+}
+
+Response
+
+{
+  "comparison_summary": "BTC market cap is 860.7x the size of Gold (PAXG).",
+  "rwa_asset": {
+    "symbol": "GOLD",
+    "token_symbol": "PAXG",
+    "parent_symbol": "GOLD",
+    "issuer_name": "Paxos",
+    "name": "PAX Gold",
+    "price_usd": 4365.280185068282,
+    "market_cap_usd": 1896711479.54,
+    "volume_24h_usd": 62227747.49655269,
+    "percent_change_24h": -0.18846101,
+    "volume_to_market_cap_ratio": 0.032808,
+    "is_specific_token": true
+  },
+  "crypto_asset": {
+    "symbol": "BTC",
+    "name": "Bitcoin",
+    "price_usd": 81272.52808201779,
+    "market_cap_usd": 1632497865095.4038,
+    "volume_24h_usd": 20584299893.95205,
+    "percent_change_24h": 0.39173583,
+    "volume_to_market_cap_ratio": 0.012609
+  },
+  "metrics": {
+    "market_cap_ratio_crypto_to_rwa": 860.7,
+    "volume_to_market_cap_ratio_rwa": 0.032808,
+    "volume_to_market_cap_ratio_crypto": 0.012609,
+    "notes": []
+  }
+}
+
+Request
+
+{
+  "crypto_symbol": "ETH",
+  "rwa_symbol": "PAXG"
+}
+
+Response
+
+{
+  "comparison_summary": "ETH market cap is 169.34x the size of Gold (PAXG).",
+  "rwa_asset": {
+    "symbol": "GOLD",
+    "token_symbol": "PAXG",
+    "parent_symbol": "GOLD",
+    "issuer_name": "Paxos",
+    "name": "PAX Gold",
+    "price_usd": 4365.280185068282,
+    "market_cap_usd": 1896711479.54,
+    "volume_24h_usd": 62227747.49655269,
+    "percent_change_24h": -0.18846101,
+    "volume_to_market_cap_ratio": 0.032808,
+    "is_specific_token": true
+  },
+  "crypto_asset": {
+    "symbol": "ETH",
+    "name": "Ethereum",
+    "price_usd": 2631.4102791609807,
+    "market_cap_usd": 321194771299.67834,
+    "volume_24h_usd": 9978595400.525026,
+    "percent_change_24h": 0.72810322,
+    "volume_to_market_cap_ratio": 0.031067
+  },
+  "metrics": {
+    "market_cap_ratio_crypto_to_rwa": 169.34,
+    "volume_to_market_cap_ratio_rwa": 0.032808,
+    "volume_to_market_cap_ratio_crypto": 0.031067,
+    "notes": []
+  }
+}
+
+Response
+
+{
+  "btc_dominance": 58.790953201624,
+  "eth_dominance": 11.566716554832,
+  "active_cryptocurrencies": 8164,
+  "total_market_cap_usd": 2777826857730.898,
+  "total_volume_24h_usd": 71949388586.99,
+  "last_updated": "2026-09-19T23:33:59.999Z"
+}
+
+Request
+
+{
+  "limit": 10
+}
+
+Response
+
+{
+  "total_issuers_tracked": 25,
+  "count_returned": 10,
+  "issuers": [
+    {
+      "issuer_id": "6878977dcbbf471de3366e85",
+      "name": "Backed Assets",
+      "website": "https://assets.backed.fi/",
+      "num_tokens": 1176
+    },
+    {
+      "issuer_id": "6a2d54b697c45356b1a634f4",
+      "name": "Backpack",
+      "website": "https://backpack.exchange",
+      "num_tokens": 7
+    },
+    {
+      "issuer_id": "68a80be20135f56ec3188cdc",
+      "name": "Bitget Assets",
+      "website": "https://www.bitget.com/",
+      "num_tokens": 0
+    },
+    {
+      "issuer_id": "6a2aed5097c45356b1a5f710",
+      "name": "bStocks",
+      "website": null,
+      "num_tokens": 77
+    },
+    {
+      "issuer_id": "6a72fe7072996604d45c6733",
+      "name": "Coinbase",
+      "website": "https://www.coinbase.com/en-sg/tokenize",
+      "num_tokens": 0
+    },
+    {
+      "issuer_id": "68904cceabae9b5b9fb35839",
+      "name": "Comtech Gold",
+      "website": "https://www.comtechgold.com/",
+      "num_tokens": 1
+    },
+    {
+      "issuer_id": "688c6172abae9b5b9fb30359",
+      "name": "Dinari Assets",
+      "website": "https://dinari.com/",
+      "num_tokens": 91
+    },
+    {
+      "issuer_id": "68c117369d7eab1d58ebd51d",
+      "name": "Fidelity Investments Assets",
+      "website": "https://www.fidelity.com/",
+      "num_tokens": 1
+    },
+    {
+      "issuer_id": "699ed38db54c9320b15928e3",
+      "name": "Hyperliquid Assets",
+      "website": "https://app.hyperliquid.xyz/trade",
+      "num_tokens": 12
+    },
+    {
+      "issuer_id": "68e25e8dd4cd001228754c7c",
+      "name": "Kinesis Assets",
+      "website": "https://kinesis.money/",
+      "num_tokens": 1
+    }
+  ]
+}
+
+Here's the cross-asset audit, pulling live data across the tokenized gold complex and the two primary crypto benchmarks.
+
+Tokenized gold layer (PAXG / broader GOLD RWA class)
+PAXG (Paxos) trades at $4,365/oz with a market cap of $1.90B and 24h volume of $62.2M — a volume/market-cap ratio of 3.3%, which is healthy turnover for a bullion-backed token. But PAXG isn't the whole tokenized gold market: across all 7 tracked gold tokens, aggregate tokenized market cap is $4.71B. Tether Gold (XAUt) is actually larger than PAXG at $2.72B market cap, meaning PAXG holds roughly 40% of the on-chain tokenized gold market rather than being the dominant player outright. Smaller entrants (Matrixdock's XAUM, Comtech Gold, VNX Gold) round out the remainder with much thinner liquidity — VNX Gold's turnover ratio is just 0.4%, signaling near-dormant secondary trading.
+
+Structural liquidity comparison vs. BTC and ETH
+
+Metric	PAXG (Gold)	BTC	ETH
+Market cap	$1.90B	$1.63T	$321.2B
+24h volume	$62.2M	$20.58B	$9.98B
+Vol/MCap ratio	3.28%	1.26%	3.11%
+Cap ratio vs. PAXG	1x	860.7x	169.3x
+
+The structural story here is counterintuitive: PAXG's turnover ratio (3.28%) actually exceeds Bitcoin's (1.26%), meaning relative to its size, tokenized gold sees more active trading velocity than BTC does — likely reflecting arbitrage flows keeping it pegged to spot gold rather than organic speculative demand. ETH's turnover (3.11%) is comparable to PAXG's, consistent with ETH's higher-beta, actively-traded profile.
+
+Scale asymmetry: BTC's market cap is 860x larger than PAXG's, and ETH's is 169x larger. This isn't a liquidity-depth failure on gold's part — it reflects that tokenized RWA gold is still a nascent wrapper product around a trillion-dollar physical bullion market, whereas BTC/ETH are native, unwrapped crypto-native assets carrying the full weight of their asset class.
+
+Macro dominance context
+Total crypto market cap sits at $2.78T, with Bitcoin dominance at roughly 58.8% and Ethereum dominance at 11.6%. Against that backdrop, PAXG's $1.9B cap is a rounding error (~0.07% of total crypto market cap) — tokenized gold remains a niche instrument, not a competing store-of-value force to BTC within crypto capital allocation, though it serves a different structural role (dollar-stable, bullion-pegged collateral) than a speculative or monetary-premium asset like BTC.
+
+Issuer/structural fragmentation risk
+The RWA gold ecosystem is fragmented across at least 7 issuers (Paxos, Tether, Matrixdock, Comtech, VNX), while the broader tokenized RWA space spans 25 tracked issuers — Backed Assets alone accounts for 1,176 tokens, dwarfing the single-asset-focused gold issuers. This fragmentation means gold-token liquidity is split rather than pooled, unlike BTC/ETH which trade as single fungible assets across all venues — a structural liquidity disadvantage for any single gold token relative to crypto majors.
+
+Bottom line: PAXG offers tight peg-tracking and decent relative turnover for its size, but sits in a fragmented, sub-scale niche (~0.07% of total crypto market cap) compared to BTC and ETH's deep, unified liquidity pools. It functions more as a stable collateral/hedge instrument than a liquid trading asset at institutional size.
