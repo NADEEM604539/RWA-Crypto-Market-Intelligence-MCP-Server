@@ -1,6 +1,12 @@
-import json
 import sys
+from pathlib import Path
+
+# Dynamically add the project root directory to Python's module search path
+project_root = str(Path(__file__).resolve().parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 from typing import Annotated, Literal
+import json
 
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import CurrentHeaders
