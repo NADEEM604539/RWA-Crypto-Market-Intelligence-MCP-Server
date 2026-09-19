@@ -1,98 +1,266 @@
 # CMC Real-World Asset Intelligence — MCP Server
 
-**Track:** AI Agents and Automation
+**Track:** AI Agents and Automation  
 **Event:** Build with CMC — CoinMarketCap API Hackathon
 
-An MCP (Model Context Protocol) server that gives any MCP-compatible LLM
-client live tools for tokenized Real-World Assets (RWAs) — gold, treasuries,
-equities, and more — and lets an agent compare them directly against
-cryptocurrencies, all backed by the CoinMarketCap Pro API.
+A production-oriented MCP server for live Real-World Asset (RWA) and crypto intelligence, built to let AI clients query CoinMarketCap data through structured, auditable tool calls.
 
 ## Live deployed MCP server
 
-This project is deployed and available for remote MCP clients at:
+The public remote endpoint is live and ready for MCP-compatible clients:
 
-- MCP endpoint: `https://cmcserver.fastmcp.app/mcp`
-- Health check: `https://cmcserver.fastmcp.app/`
-- Authentication header: `X-CMC_PRO_API_KEY`
+- **MCP endpoint:** `https://cmcserver.fastmcp.app/mcp`
+- **Health endpoint:** `https://cmcserver.fastmcp.app/`
+- **Auth header:** `X-CMC_PRO_API_KEY`
 
-This is the public server you can connect your agent, IDE, or custom client to.
+This service is designed to be consumed by Claude Desktop, Cursor, LangGraph agents, and custom Python clients using HTTP/SSE transport.
 
-For full deployment instructions and production setup details, see:
+For full deployment and connection guidance, see:
 
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 - [docs/MCP_CONNECTION.md](docs/MCP_CONNECTION.md)
+- [docs/architecture.md](docs/architecture.md)
 
 ## Why this exists
 
-CoinMarketCap now tracks tokenized RWAs alongside crypto, but that data is
-locked behind raw API calls most people never make. This server puts it in
-front of an LLM as tools, so an agent (or you, via the included demo UI) can
-ask things like *"Is tokenized gold under- or overvalued relative to
-Bitcoin's market cap right now?"* and get a live, sourced answer — not a
-guess from training data.
+CoinMarketCap tracks tokenized RWAs and crypto assets in a way that is difficult for most LLMs to access directly. This project exposes those market signals as MCP tools so an agent can reason over them in a structured and explainable way.
 
-## Tools
+Examples of supported institutional-style queries:
 
-| Tool | Purpose |
-|---|---|
-| `resolve_rwa_asset` | Resolve a ticker (e.g. `PAXG`) to its canonical parent RWA (`GOLD`) and its `rwa_id` |
-| `get_rwa_market_quote` | Price, market cap, volume, and token breakdown for one RWA |
-| `compare_rwa_vs_crypto` | Side-by-side RWA vs. cryptocurrency comparison, incl. market-cap ratio |
-| `get_rwa_issuers_info` | List registered RWA token issuers and how many tokens each manages |
-| `get_global_market_metrics` | BTC/ETH dominance, total market cap, 24h volume |
+- "Resolve `PAXG` to its parent RWA." 
+- "Compare `PAXG` versus `BTC` by live market cap and volume." 
+- "Rank tokenized gold issuers and output their issuer metadata." 
+- "Compute the tokenized gold market penetration against the global crypto market cap."
 
-Every tool talks to the live CoinMarketCap Pro API — nothing is mocked.
+---
 
-## What makes this more than an API wrapper
+## Tool capability overview
 
-- **Client-side rate limiting** — an async sliding-window limiter throttles
-  outbound calls to stay under the plan's requests-per-minute ceiling, so
-  the server queues gracefully instead of hammering the API into 429s.
-- **Retry with backoff** — transient failures (429, 5xx, network errors) are
-  retried with exponential backoff; 4xx client errors fail fast since
-  retrying them can't help.
-- **TTL caching** — RWA quotes, issuer lists, and global metrics are cached
-  per-endpoint (30s–5min depending on how fast the data actually changes) to
-  cut redundant API usage.
-- **A shared, indexed symbol resolver** — resolving a token ticker (e.g.
-  `PAXG`) to its parent RWA (`GOLD`) requires scanning every issuer and every
-  issuer's tokens. That index is built once, cached, and reused across all
-  symbol lookups instead of re-scanning per request.
-- **Typed error handling** — CMC's HTTP status codes are mapped to specific
-  exception types (`CMCBadRequestError`, `CMCUnauthorizedError`,
-  `CMCRateLimitError`, `CMCNotFoundError`) instead of leaking raw HTTP
-  errors or crashing a tool call.
-- **Defensive response normalization** — CoinMarketCap's endpoints return
-  inconsistent shapes for the same field (a dict in one case, a list in
-  another). The Pydantic schemas and tool logic normalize these shapes
-  before an agent ever sees them.
-- **Domain-aware price handling** — gold-backed tokens are quoted per-gram
-  by some issuers and per-troy-ounce by others; `get_rwa_market_quote`
-  detects which convention a token uses and normalizes it so prices are
-  actually comparable.
-- **Secret-safe structured logging** — every outbound API call is logged
-  with latency, status, and credit usage to stderr (never stdout, which
-  would corrupt the MCP stdio stream), with API keys automatically redacted.
-- **Per-request authentication** — each MCP request supplies its own
-  `X-CMC_PRO_API_KEY` header, verified and rate-limited independently, so
-  the server can serve multiple users/keys safely.
+| Tool | Purpose | Key Inputs |
+|---|---|---|
+| `resolve_rwa_asset` | Resolve a token or RWA symbol to the parent asset and canonical `rwa_id` | `symbol` |
+| `get_rwa_market_quote` | Fetch price, market cap, volume, and token metadata for an asset | `identifier` |
+| `compare_rwa_vs_crypto` | Compare an RWA or tokenized RWA against a crypto asset | `rwa_symbol`, `crypto_symbol` |
+| `get_rwa_issuers_info` | Return issuer metadata and token inventory | `limit`, `start` |
+| `get_global_market_metrics` | Return aggregate crypto macro metrics and dominance | none |
 
-## How to connect to the live MCP server
+## Resolution pathway documentation
 
-Use the deployed endpoint below in any MCP-compatible client.
+The resolution flow is intentionally documented as a two-tier fallback system:
+
+1. **Direct symbol lookup** — try the requested symbol first against CMC's RWA quote endpoint.
+2. **Secondary token scan** — if the direct symbol does not resolve, walk issuer registries and search token metadata for the symbol, then map it back to the parent `rwa_id`.
+
+This prevents a symbol like `PAXG` or `XAUt` from failing silently when it is a tokenized representation of a parent asset such as `GOLD`.
+
+### Example resolution flow
+
+```python
+resolved = await resolve_rwa_asset("PAXG", api_key=api_key)
+```
+
+### Example JSON response
+
+```json
+{
+  "rwa_id": 1,
+  "name": "Gold",
+  "symbol": "GOLD",
+  "slug": "gold",
+  "asset_type": "commodity",
+  "rwa_rank": 1,
+  "has_tokens": true,
+  "resolved_via": "token_symbol",
+  "matched_token": {
+    "symbol": "PAXG",
+    "name": "PAX Gold",
+    "issuer_id": "issuer-1",
+    "issuer_name": "PAX",
+    "crypto_id": "gold",
+    "rwa_id": 1
+  }
+}
+```
+
+This demonstrates the supported behavior: **`PAXG` resolves to parent asset `GOLD` with `rwa_id = 1`**.
+
+The `matched_token` metadata includes the newly supported fields:
+
+- **`issuer_id`**
+- **`issuer_name`**
+- **`crypto_id`**
+
+---
+
+## Cross-asset comparison engine
+
+The comparison engine uses a normalized dual-pipeline flow and exposes an explicit `is_specific_token` flag so the caller can distinguish between aggregate RWA assets and specific tokenized securities.
+
+### Formula: volume-to-market-cap ratio
+
+$$
+\frac{V}{MC} = \frac{\text{24h Volume (USD)}}{\text{Market Capitalization (USD)}}
+$$
+
+This metric is used to contextualize liquidity relative to asset size.
+
+### `is_specific_token` semantics
+
+- **`true`** when the request resolves to a specific token like `PAXG` or `XAUt`
+- **`false`** when the comparison is made against the aggregate parent asset like `GOLD`
+
+### Example: specific token comparison
+
+```json
+{
+  "comparison_summary": "BTC market cap is 4.72x the size of PAXG (Gold).",
+  "rwa_asset": {
+    "symbol": "GOLD",
+    "name": "Gold",
+    "price_usd": 3031.2,
+    "market_cap_usd": 15000000000,
+    "volume_24h_usd": 520000000,
+    "is_specific_token": true
+  },
+  "crypto_asset": {
+    "symbol": "BTC",
+    "name": "Bitcoin",
+    "price_usd": 60000.0,
+    "market_cap_usd": 1200000000000,
+    "volume_24h_usd": 50000000000,
+    "percent_change_24h": 2.5
+  },
+  "metrics": {
+    "market_cap_ratio_crypto_to_rwa": 4.72,
+    "volume_to_market_cap_ratio_rwa": 0.035,
+    "volume_to_market_cap_ratio_crypto": 0.042
+  }
+}
+```
+
+### Example: aggregate asset comparison
+
+```json
+{
+  "comparison_summary": "BTC market cap is 1.32x the size of Gold (tokenized aggregate).",
+  "rwa_asset": {
+    "symbol": "GOLD",
+    "name": "Gold",
+    "price_usd": 3051.25,
+    "market_cap_usd": 190000000000,
+    "volume_24h_usd": 5200000000,
+    "is_specific_token": false
+  },
+  "crypto_asset": {
+    "symbol": "BTC",
+    "name": "Bitcoin",
+    "price_usd": 60000.0,
+    "market_cap_usd": 1200000000000,
+    "volume_24h_usd": 50000000000,
+    "percent_change_24h": 2.5
+  },
+  "metrics": {
+    "market_cap_ratio_crypto_to_rwa": 1.32
+  }
+}
+```
+
+### 24h delta specification
+
+The comparison payload includes the standard crypto percentage move field:
+
+- **`percent_change_24h`** — the 24-hour percentage change for the crypto asset, expressed as a numeric percent value such as `2.5` for +2.5%.
+
+This is included alongside the RWA market metrics to give an agent an apples-to-apples comparison context.
+
+---
+
+## Institutional risk & compliance schema
+
+The RWA issuer metadata is designed to align with institutional expectations around asset provenance, reserving, custody, and supervision.
+
+### Supported attestation and issuer metadata
+
+The issuer registry can surface metadata such as:
+
+- **`issuer_id`** — internal CMC issuer identifier
+- **`issuer_name`** — issuer or platform name
+- **`token_count`** — number of tokens associated with the issuer
+- **`jurisdiction`** — operating territory or registry context
+- **`custody_structure`** — physical custody arrangement or trust structure
+- **`reserve_attestation`** — monthly or periodic reserve confirmation status
+- **`regulatory_framework`** — NYDFS, SEC, or other relevant legal framework context
+
+### Institutional compliance contexts
+
+The system acknowledges the following institutional considerations:
+
+- **NYDFS registration** for relevant regulated digital asset issuers
+- **Monthly independent reserve attestations** verifying backing and reserve sufficiency
+- **Physical custody structures** for commodity-backed and treasury-backed assets
+- **Open transparency around asset backing, reserve controls, and reporting cadence**
+
+These fields are not meant to replace legal or audit review, but they help standardize the metadata layer that an LLM needs when comparing regulated RWA products.
+
+---
+
+## Macro penetration metrics
+
+The macro toolset supports RWA sector analysis relative to the global crypto market.
+
+### Formula: tokenized gold sector penetration
+
+$$
+\text{Tokenized Gold Sector Penetration (\%)} = \left(\frac{\text{Total Tokenized Gold Market Cap}}{\text{Total Crypto Market Cap}}\right) \times 100
+$$
+
+This allows an agent to answer questions such as:
+
+- "What percentage of the crypto market is represented by tokenized gold?"
+- "How much of the market cap is linked to tokenized commodity exposure?"
+- "Is the RWA share materially growing or still marginal?"
+
+---
+
+## Standardized error handling
+
+All tools are designed to return explicit error payloads instead of crashing or returning null-only responses.
+
+### Error shape
+
+```json
+{
+  "error": "Asset with symbol 'XYZ' not found.",
+  "error_hint": "Try using the parent asset symbol or check the issuer registry for a tokenized alias."
+}
+```
+
+### Error handling guidance
+
+| Error condition | Example response shape | Suggested fallback |
+|---|---|---|
+| Symbol not found | `{"error": "Asset with symbol 'XYZ' not found.", "error_hint": "Try parent symbol or issuer registry"}` | Try `GOLD`, `PAXG`, or issuer scan |
+| Unsupported alias | `{"error": "Ticker not tracked.", "error_hint": "Check supported identifiers"}` | Use a supported parent asset or issuer list |
+| Upstream API failure | `{"error": "CMC request failed.", "error_hint": "Retry after backoff or validate API credentials"}` | Retry and verify `CMC_API_KEY` |
+| Invalid parameter format | `{"error": "Invalid symbol input.", "error_hint": "Use a valid 2-64 character symbol"}` | Reformat the input to valid schema |
+
+---
+
+## Live connection guide
+
+To connect to the deployed server, use the following remote endpoint:
 
 ```text
 https://cmcserver.fastmcp.app/mcp
 ```
 
-With the following request header:
+And pass the required header:
 
 ```http
 X-CMC_PRO_API_KEY: your_coinmarketcap_api_key_here
 ```
 
-### Example for Claude Desktop
+### Claude Desktop example
 
 ```json
 {
@@ -113,120 +281,54 @@ X-CMC_PRO_API_KEY: your_coinmarketcap_api_key_here
 }
 ```
 
-### Example for Cursor / custom agents
+### Python example
+
+```python
+import asyncio
+from mcp.client.session import ClientSession
+from mcp.client.sse import sse_client
+
+SERVER_URL = "https://cmcserver.fastmcp.app/mcp"
+API_KEY = "your_coinmarketcap_api_key_here"
+
+async def main():
+    async with sse_client(SERVER_URL, headers={"X-CMC_PRO_API_KEY": API_KEY}) as streams:
+        async with ClientSession(streams[0], streams[1]) as session:
+            await session.initialize()
+            print(await session.list_tools())
+
+asyncio.run(main())
+```
+
+---
+
+## Setup and local execution
+
+### Install dependencies
 
 ```bash
-npx mcp-remote https://cmcserver.fastmcp.app/mcp --header "X-CMC_PRO_API_KEY:your_coinmarketcap_api_key_here"
+pip install -r requirements.txt
 ```
 
-For a full remote connection walkthrough, see [docs/MCP_CONNECTION.md](docs/MCP_CONNECTION.md).
-
-## Project layout
-
-```
-app/
-  server.py           # FastMCP server — defines and exposes the 5 MCP tools
-  config.py            # Pydantic settings, loaded from .env
-  auth/
-    auth.py            # Per-request API key extraction, verification, rate limiting
-  cmc/
-    client.py           # Async CMC API client (caching, retries, rate limiting)
-    schemas.py           # Pydantic response models + shape-normalization logic
-    exceptions.py         # Typed exception hierarchy mapped to CMC HTTP errors
-  tools/
-    resolve_rwa_asset.py     # Symbol -> parent RWA resolution (indexed + cached)
-    get_rwa_market_quote.py   # Single-asset quote + gold unit normalization
-    compare_rwa_vs_crypto.py   # Dual-pipeline RWA vs crypto comparison
-    get_rwa_issuers_info.py     # Issuer list
-    get_global_market_metrics.py # Macro crypto indicators
-    registry.py                   # Central export list of all tools
-  utils/
-    cache.py             # TTLCache + AsyncRateLimiter (shared primitives)
-    logging.py            # Structured, secret-redacting logger
-  requirements.txt
-  .env.example
-
-docs/
-  DEPLOYMENT.md          # Full deployment / production instructions
-  MCP_CONNECTION.md      # Remote client connection setup
-  README_STREAMLIT.md    # Demo UI notes
-  architecture.md        # Architecture overview
-
-tests/
-  agent.py              # LangGraph ReAct agent wired to the MCP server (HTTP transport)
-  full_test.py            # Automated end-to-end diagnostic test suite (CI-friendly, exit code 0/1)
-  test_rwa_resolution.py   # Focused tests for the resolver
-  streamlit_app.py          # Chat UI demo on top of tests/agent.py
-  requirements.txt
-```
-
-## Setup
-
-From the project root (the parent of `app/` and `tests/`):
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate          # Windows
-# source .venv/bin/activate     # macOS/Linux
-
-pip install -r app/requirements.txt
-pip install -r tests/requirements.txt   # only needed to run the agent/demo
-
-copy app\.env.example .env      # Windows
-# cp app/.env.example .env      # macOS/Linux
-```
-
-Edit `.env` and set:
-- `CMC_API_KEY` — your CoinMarketCap key (Startup tier from hackathon signup)
-- `OPENAI_API_KEY` — only needed to run the demo agent/Streamlit UI
-
-## Run the MCP server
+### Start the local server
 
 ```bash
 python -m app.server
 ```
 
-Starts a streamable-HTTP MCP server on `http://127.0.0.1:8000/mcp`.
-Point any MCP-compatible client at that URL, or use the demo agent below.
-
-## Run the demo agent (evidence of live API calls)
-
-With the server running in one terminal:
+### Run the test suite
 
 ```bash
-python tests/agent.py
+pytest .
 ```
 
-Runs a LangGraph ReAct agent through 5 real queries against all 5 tools,
-printing each tool call and the live CMC response — this is the "visible
-evidence of a real API call" artifact for the submission.
+---
 
-## Run the chat demo UI
+## Documentation references
 
-```bash
-streamlit run tests/streamlit_app.py
-```
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- [docs/MCP_CONNECTION.md](docs/MCP_CONNECTION.md)
+- [docs/architecture.md](docs/architecture.md)
+- [docs/README_STREAMLIT.md](docs/README_STREAMLIT.md)
 
-A browser chat UI over the same agent. Expand **"Tool calls & raw API
-responses"** under any answer to see exactly which tool was called and the
-raw JSON it returned. See `tests/README_STREAMLIT.md` for troubleshooting.
-
-## Run the automated test suite
-
-```bash
-python tests/full_test.py
-```
-
-CI-friendly diagnostic suite (exit code `0`/`1`) that drives the agent
-through defined scenarios and checks tool selection + expected keywords in
-the response.
-
-## Known limitations
-
-- A handful of institutional tickers (`BUIDL`, `OUSG`, `USDY`) are not
-  currently indexed by CMC's RWA endpoints under those symbols, so
-  `get_rwa_market_quote` returns an honest "not tracked" response rather
-  than a false match — see `RWA_SYMBOL_ALIASES` in
-  `app/tools/get_rwa_market_quote.py` if/when a verified alias is found.
-- All caching and rate limiting is in-memory and process-local — correct
-  for a single-process hackathon deployment, not yet horizontally scaled.
+This documentation reflects the upgraded MCP capability set and the currently supported resolution and comparison semantics described by the live server implementation.
