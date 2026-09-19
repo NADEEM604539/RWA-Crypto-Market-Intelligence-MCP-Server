@@ -63,10 +63,16 @@ class CMCClient:
             return payload.get("data", {})
 
         validated = response_model.model_validate(payload)
-        data = getattr(validated, "data", validated)
-        if hasattr(data, "model_dump"):
-            return data.model_dump(mode="python")
-        return data
+        # Serialize the WHOLE validated response first (mode="python" recursively
+        # converts every nested BaseModel -- including model instances sitting
+        # inside a plain dict value, e.g. Dict[str, CryptoAssetData] -- into
+        # plain dicts). Only then pull out "data". Previously this dumped just
+        # the `.data` attribute, and skipped the dump entirely when `.data`
+        # happened to be a plain dict/list container (as with CryptoQuotesResponse),
+        # leaving nested model instances unconverted and invisible to `.get()`
+        # calls downstream.
+        dumped = validated.model_dump(mode="python")
+        return dumped.get("data", dumped)
 
     async def _request_json(
         self,
