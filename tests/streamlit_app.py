@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import threading
 from pathlib import Path
 
 import streamlit as st
@@ -39,39 +40,50 @@ st.set_page_config(
 
 
 # ---------------------------------------------------------------------------
-# Async bridge — Maintains a persistent event loop across Streamlit script runs.
+# Async Bridge — Persistent background event loop for Streamlit reruns
 # ---------------------------------------------------------------------------
-def get_event_loop() -> asyncio.AbstractEventLoop:
-    """Retrieve or create a persistent event loop for the current thread."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop
+class AsyncRunner:
+    """Runs a persistent asyncio event loop in a dedicated background thread.
+
+    Prevents 'Event loop is closed' or 'Task attached to a different loop'
+    errors when maintaining long-lived MCP stdio subprocess connections across
+    Streamlit script execution reruns.
+    """
+
+    def __init__(self) -> None:
+        self.loop = asyncio.new_event_loop()
+        self.thread = threading.Thread(target=self._run_loop, daemon=True)
+        self.thread.start()
+
+    def _run_loop(self) -> None:
+        asyncio.set_event_loop(self.loop)
+        self.loop.run_forever()
+
+    def run(self, coro):
+        """Schedules a coroutine on the background event loop and blocks for the result."""
+        future = asyncio.run_coroutine_threadsafe(coro, self.loop)
+        return future.result()
 
 
-def run_async(coro):
-    """Executes an async coroutine synchronously on the active event loop."""
-    loop = get_event_loop()
-    return loop.run_until_complete(coro)
+@st.cache_resource
+def get_async_runner() -> AsyncRunner:
+    """Instantiates and caches the background AsyncRunner once per process."""
+    return AsyncRunner()
 
 
 @st.cache_resource(show_spinner="🔌 Connecting to MCP server and loading tools...")
 def get_agent_and_tools():
-    """Builds the agent once per Streamlit session process and caches it.
+    """Builds the agent once per Streamlit process and caches it.
 
     Spawns the `app.server` MCP subprocess (via tests/agent.py's
     build_agent()) and loads its tools into the LangGraph ReAct agent.
     """
-    return run_async(build_agent())
+    runner = get_async_runner()
+    return runner.run(build_agent())
 
 
 def extract_tool_trace(messages) -> list[str]:
-    """Pulls a readable trace of tool calls + raw responses from messages."""
+    """Pulls a readable trace of tool calls + raw responses from message objects."""
     trace: list[str] = []
     for m in messages:
         if isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
@@ -83,7 +95,7 @@ def extract_tool_trace(messages) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# UI
+# Environment & Setup
 # ---------------------------------------------------------------------------
 st.title("📊 CMC Real-World Asset Intelligence — Agent Demo")
 st.caption(
@@ -111,6 +123,9 @@ if "messages" not in st.session_state:
 if "pending_query" not in st.session_state:
     st.session_state.pending_query = None
 
+# ---------------------------------------------------------------------------
+# Sidebar UI
+# ---------------------------------------------------------------------------
 with st.sidebar:
     st.subheader("🔧 Loaded MCP Tools")
     st.caption(f"{len(tools)} tools connected via stdio")
@@ -137,7 +152,10 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
 
-# Render conversation history
+# ---------------------------------------------------------------------------
+# Chat History & Interactivity
+# ---------------------------------------------------------------------------
+# Render existing conversation history
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
@@ -146,23 +164,36 @@ for msg in st.session_state.messages:
                 for line in msg["trace"]:
                     st.code(line, language="text")
 
-# Get the next query — either typed or clicked from the sidebar examples
+# Determine query source (chat input or sidebar quick-button)
 query = st.chat_input("Ask about RWAs, tokens, or crypto markets...")
 if not query and st.session_state.pending_query:
     query = st.session_state.pending_query
     st.session_state.pending_query = None
 
 if query:
+    # 1. Render and record user query
     st.session_state.messages.append({"role": "user", "content": query})
     with st.chat_message("user"):
         st.markdown(query)
 
+    # 2. Build full conversation history for multi-turn agent context memory
+    history = [
+        (m["role"], m["content"])
+        for m in st.session_state.messages
+        if m["role"] in ("user", "assistant")
+    ]
+
+    # 3. Invoke agent safely on persistent background loop
     with st.chat_message("assistant"):
         with st.spinner("Calling CMC API tools..."):
             try:
-                response = run_async(agent.ainvoke({"messages": [("user", query)]}))
+                runner = get_async_runner()
+                response = runner.run(agent.ainvoke({"messages": history}))
+
                 final_message = response["messages"][-1].content
-                trace = extract_tool_trace(response["messages"])
+                # Slice history messages to trace only tool calls from this turn
+                new_messages = response["messages"][len(history) :]
+                trace = extract_tool_trace(new_messages)
 
                 st.markdown(final_message)
                 if trace:
