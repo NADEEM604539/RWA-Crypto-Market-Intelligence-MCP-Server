@@ -5,8 +5,6 @@ import sys
 
 from mcp.server.fastmcp import FastMCP as MCPServer
 from pydantic import Field
-
-from app.config import settings
 from app.tools.resolve_rwa_asset import resolve_rwa_asset
 from app.tools.get_rwa_market_quote import get_rwa_market_quote
 from app.tools.compare_rwa_vs_crypto import compare_rwa_vs_crypto
@@ -81,5 +79,5 @@ async def get_global_market_metrics_tool() -> str:
 
 
 if __name__ == "__main__":
-    print("🚀 Running CoinMarketCap RWA MCP Server via stdio...", file=sys.stderr)
-    mcp.run(transport="stdio")
+    print("🚀 Running CoinMarketCap RWA MCP Server via streamable-http...", file=sys.stderr)
+    mcp.run(transport="streamable-http")
