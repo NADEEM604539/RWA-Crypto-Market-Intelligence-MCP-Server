@@ -23,13 +23,12 @@ from pathlib import Path
 import streamlit as st
 from dotenv import load_dotenv
 
-# `agent.py` lives next to this file — make sure it's importable regardless
-# of the working directory Streamlit was launched from.
+# Ensure `agent.py` in the same directory is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 load_dotenv()
 
-from agent import build_agent  # noqa: E402  (import after sys.path/env setup)
+from agent import build_agent  # noqa: E402
 from langchain_core.messages import AIMessage, ToolMessage  # noqa: E402
 
 st.set_page_config(
@@ -40,16 +39,24 @@ st.set_page_config(
 
 
 # ---------------------------------------------------------------------------
-# Async bridge — Streamlit's execution model is sync, the agent is async.
+# Async bridge — Maintains a persistent event loop across Streamlit script runs.
 # ---------------------------------------------------------------------------
-def run_async(coro):
+def get_event_loop() -> asyncio.AbstractEventLoop:
+    """Retrieve or create a persistent event loop for the current thread."""
     try:
         loop = asyncio.get_event_loop()
         if loop.is_closed():
-            raise RuntimeError("event loop is closed")
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+    return loop
+
+
+def run_async(coro):
+    """Executes an async coroutine synchronously on the active event loop."""
+    loop = get_event_loop()
     return loop.run_until_complete(coro)
 
 
@@ -57,16 +64,14 @@ def run_async(coro):
 def get_agent_and_tools():
     """Builds the agent once per Streamlit session process and caches it.
 
-    This spawns the `app.server` MCP subprocess (via tests/agent.py's
-    build_agent()) and loads its 5 tools into the LangGraph ReAct agent.
+    Spawns the `app.server` MCP subprocess (via tests/agent.py's
+    build_agent()) and loads its tools into the LangGraph ReAct agent.
     """
     return run_async(build_agent())
 
 
 def extract_tool_trace(messages) -> list[str]:
-    """Pulls a readable trace of tool calls + their raw responses out of the
-    agent's message list, for the 'evidence of a real API call' expander.
-    """
+    """Pulls a readable trace of tool calls + raw responses from messages."""
     trace: list[str] = []
     for m in messages:
         if isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
@@ -83,7 +88,7 @@ def extract_tool_trace(messages) -> list[str]:
 st.title("📊 CMC Real-World Asset Intelligence — Agent Demo")
 st.caption(
     "LangGraph agent → MCP server (`app.server`) → live CoinMarketCap API. "
-    "Build with CMC Hackathon · AI Agents and Automation track"
+    "Built for CMC Hackathon · AI Agents and Automation track"
 )
 
 missing_env = [k for k in ("CMC_API_KEY", "OPENAI_API_KEY") if not os.environ.get(k)]
@@ -125,6 +130,7 @@ with st.sidebar:
     for ex in examples:
         if st.button(ex, key=f"ex-{ex}", use_container_width=True):
             st.session_state.pending_query = ex
+            st.rerun()
 
     st.divider()
     if st.button("🗑️ Clear conversation", use_container_width=True):
@@ -138,7 +144,7 @@ for msg in st.session_state.messages:
         if msg.get("trace"):
             with st.expander("🔍 Tool calls & raw API responses"):
                 for line in msg["trace"]:
-                    st.code(line, language="json")
+                    st.code(line, language="text")
 
 # Get the next query — either typed or clicked from the sidebar examples
 query = st.chat_input("Ask about RWAs, tokens, or crypto markets...")
@@ -162,7 +168,7 @@ if query:
                 if trace:
                     with st.expander("🔍 Tool calls & raw API responses", expanded=False):
                         for line in trace:
-                            st.code(line, language="json")
+                            st.code(line, language="text")
 
                 st.session_state.messages.append(
                     {"role": "assistant", "content": final_message, "trace": trace}
