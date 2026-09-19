@@ -6,8 +6,14 @@ from app.tools.resolve_rwa_asset import resolve_rwa_asset
 # Known institutional / alternatively-indexed RWA tickers that CoinMarketCap
 # does not resolve via a plain symbol lookup. Maps the ticker a user would
 # naturally type to the ticker/key CMC actually indexes it under.
+#
+# BUIDL (BlackRock's USD Institutional Digital Liquidity Fund) has no
+# standalone primary listing in CMC's RWA categories as of this writing, so
+# it is proxied to Ondo's OUSG (Short-Term US Government Bond Fund), the
+# closest tracked tokenized-treasury instrument. Swap this to a direct
+# BUIDL mapping the moment CMC indexes it natively.
 RWA_SYMBOL_ALIASES: Dict[str, str] = {
-    "BUIDL": "BUIDL",   # BlackRock USD Institutional Digital Liquidity Fund
+    "BUIDL": "OUSG",    # BlackRock BUIDL -> proxied via Ondo's tokenized treasury fund
     "USDY": "USDY",     # Ondo USD Yield
     "OUSG": "OUSG",      # Ondo Short-Term US Government Bond Fund
 }
@@ -58,8 +64,16 @@ async def get_rwa_market_quote(identifier: str, api_key: str) -> Dict[str, Any]:
         asset = rwa_assets[0]
         quotes = (asset.get("quotes") or [{}])[0]
 
+        proxy_note = None
+        if clean_id != search_target:
+            proxy_note = (
+                f"'{clean_id}' has no standalone primary listing in CMC's RWA data; "
+                f"showing proxied data for '{search_target}' instead."
+            )
+
         return {
             "resolved": True,
+            "proxy_note": proxy_note,
             "rwa_id": asset.get("rwa_id"),
             "name": asset.get("name"),
             "symbol": asset.get("symbol"),

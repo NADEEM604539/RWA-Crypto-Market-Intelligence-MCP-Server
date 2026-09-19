@@ -5,6 +5,9 @@ from app.cmc.client import cmc_client
 from app.tools.resolve_rwa_asset import resolve_rwa_asset
 
 
+# ============================================================================
+# Shared payload-normalization helpers
+# ============================================================================
 def _normalize_rwa_payload(payload: Any) -> Dict[str, Any]:
     """Normalize one of the multiple RWA payload shapes to a single asset dict."""
     if not payload:
@@ -102,7 +105,7 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
 def extract_crypto_quote(api_response: Any, symbol: str) -> Dict[str, Any]:
     """
     Safely extract a cryptocurrency's USD quote from a CMC
-    /v1/cryptocurrency/quotes/latest-style response.
+    /v1/cryptocurrency/quotes/latest (or /v3 equivalent) response.
 
     Handles the case where `data[symbol]` is returned as a list (e.g. when
     multiple tokens share the same ticker) instead of a dict, and guarantees
@@ -113,18 +116,13 @@ def extract_crypto_quote(api_response: Any, symbol: str) -> Dict[str, Any]:
 
     token_data = _normalize_crypto_payload(api_response, symbol_upper)
 
-    # _normalize_crypto_payload already handles list-vs-dict for data[symbol],
-    # but guard again defensively in case a raw list slipped through.
     if isinstance(token_data, list):
         token_data = token_data[0] if token_data and isinstance(token_data[0], dict) else {}
     if not isinstance(token_data, dict):
         token_data = {}
 
     raw_quote = token_data.get("quote", {})
-    if isinstance(raw_quote, dict):
-        quote_usd = raw_quote.get("USD", {})
-    else:
-        quote_usd = {}
+    quote_usd = raw_quote.get("USD", {}) if isinstance(raw_quote, dict) else {}
     if not isinstance(quote_usd, dict):
         quote_usd = {}
 
@@ -135,76 +133,114 @@ def extract_crypto_quote(api_response: Any, symbol: str) -> Dict[str, Any]:
         "market_cap_usd": _safe_float(quote_usd.get("market_cap"), 0.0),
         "volume_24h_usd": _safe_float(quote_usd.get("volume_24h"), 0.0),
         "percent_change_24h": _safe_float(quote_usd.get("percent_change_24h"), 0.0),
+        # Signals whether we actually matched a real record vs. an all-zero stub
+        "_found": bool(token_data),
     }
 
 
+# ============================================================================
+# Dual-pipeline fetchers
+#
+# RWAs and standard cryptocurrencies come from two entirely different CMC
+# data structures (aggregated tokenized RWA arrays vs. standard coin quotes),
+# so each pipeline is fetched and normalized in complete isolation, then
+# merged only at the very end inside compare_rwa_vs_crypto().
+# ============================================================================
+async def fetch_rwa_data(symbol: str, api_key: str) -> Dict[str, Any]:
+    """
+    Pipeline 1: Resolve + fetch an RWA (or specific tokenized RWA) and return
+    a normalized dict with tokenized market cap, price, and volume.
+    """
+    clean_symbol = symbol.strip().upper()
+
+    resolved = await resolve_rwa_asset(clean_symbol, api_key=api_key)
+    if isinstance(resolved, list):
+        resolved = resolved[0] if resolved else {}
+    if not isinstance(resolved, dict) or resolved.get("error"):
+        return {"error": resolved.get("error", f"Could not resolve RWA '{clean_symbol}'.")}
+
+    rwa_id = resolved.get("rwa_id")
+    if rwa_id is None:
+        return {"error": f"RWA asset '{clean_symbol}' not found."}
+
+    try:
+        rwa_res = await cmc_client.get_rwa_quotes(api_key=api_key, rwa_id=str(rwa_id))
+    except Exception as e:
+        return {"error": f"Failed fetching RWA asset '{clean_symbol}': {str(e)}"}
+
+    rwa_info = _normalize_rwa_payload(rwa_res)
+    specific_token = _extract_token_by_symbol(rwa_info, clean_symbol)
+    parent_symbol = rwa_info.get("symbol") or clean_symbol
+    parent_name = rwa_info.get("name") or clean_symbol
+
+    if specific_token:
+        return {
+            "symbol": parent_symbol,
+            "name": specific_token.get("name", parent_name),
+            "price_usd": _safe_float(specific_token.get("price"), 0.0),
+            "market_cap_usd": _safe_float(specific_token.get("market_cap"), 0.0),
+            "volume_24h_usd": _safe_float(specific_token.get("volume_24h"), 0.0),
+            "asset_label": f"{parent_name} ({parent_symbol})",
+            "is_specific_token": True,
+        }
+
+    quote = (rwa_info.get("quotes") or [{}])[0]
+    return {
+        "symbol": parent_symbol,
+        "name": parent_name,
+        "price_usd": _safe_float(quote.get("average_tokenized_price") or rwa_info.get("average_tokenized_price"), 0.0),
+        "market_cap_usd": _safe_float(quote.get("tokenized_market_cap") or rwa_info.get("tokenized_market_cap"), 0.0),
+        "volume_24h_usd": _safe_float(quote.get("tokenized_volume_24h") or rwa_info.get("tokenized_volume_24h"), 0.0),
+        "asset_label": f"Tokenized {parent_name}",
+        "is_specific_token": False,
+    }
+
+
+async def fetch_crypto_data(symbol: str, api_key: str) -> Dict[str, Any]:
+    """
+    Pipeline 2: Fetch a standard cryptocurrency quote and return a normalized
+    dict with price, market cap, and volume — safely handling data[SYMBOL]
+    being a list or a dict.
+    """
+    clean_symbol = symbol.strip().upper()
+
+    try:
+        crypto_res = await cmc_client.get_crypto_quotes(api_key=api_key, symbol=clean_symbol)
+    except Exception as e:
+        return {"error": f"Failed fetching Crypto asset '{clean_symbol}': {str(e)}"}
+
+    quote = extract_crypto_quote(crypto_res, clean_symbol)
+    if not quote.get("_found"):
+        return {"error": f"Crypto asset '{clean_symbol}' quote data not found."}
+
+    quote.pop("_found", None)
+    return quote
+
+
+# ============================================================================
+# Comparison entrypoint — merges the two isolated pipelines
+# ============================================================================
 async def compare_rwa_vs_crypto(rwa_symbol: str, crypto_symbol: str, api_key: str) -> Dict[str, Any]:
     """Compare a specific RWA token or parent RWA asset against a cryptocurrency."""
     try:
         clean_rwa = rwa_symbol.strip().upper()
         clean_crypto = crypto_symbol.strip().upper()
 
-        # 1. Resolve RWA Metadata using provided api_key
-        resolved_rwa = await resolve_rwa_asset(clean_rwa, api_key=api_key)
-        if isinstance(resolved_rwa, list):
-            resolved_rwa = resolved_rwa[0] if resolved_rwa else {}
-        if not isinstance(resolved_rwa, dict) or resolved_rwa.get("error"):
-            return {"error": resolved_rwa.get("error", f"Could not resolve RWA '{clean_rwa}'.")}
-
-        rwa_id = resolved_rwa.get("rwa_id")
-        if rwa_id is None:
-            return {"error": f"RWA asset '{clean_rwa}' not found."}
-
-        # 2. Fetch Data Concurrently using provided api_key
-        rwa_res, crypto_res = await asyncio.gather(
-            cmc_client.get_rwa_quotes(api_key=api_key, rwa_id=str(rwa_id)),
-            cmc_client.get_crypto_quotes(api_key=api_key, symbol=clean_crypto),
-            return_exceptions=True,
+        rwa_data, crypto_data = await asyncio.gather(
+            fetch_rwa_data(clean_rwa, api_key=api_key),
+            fetch_crypto_data(clean_crypto, api_key=api_key),
         )
 
-        if isinstance(rwa_res, Exception):
-            return {"error": f"Failed fetching RWA asset '{clean_rwa}': {str(rwa_res)}"}
-        if isinstance(crypto_res, Exception):
-            return {"error": f"Failed fetching Crypto asset '{clean_crypto}': {str(crypto_res)}"}
+        if rwa_data.get("error"):
+            return {"error": rwa_data["error"]}
+        if crypto_data.get("error"):
+            return {"error": crypto_data["error"]}
 
-        # 3. Parse Crypto Data Safely (handles data[symbol] as list OR dict,
-        # and defaults missing/None numeric fields to 0.0)
-        crypto_quote = extract_crypto_quote(crypto_res, clean_crypto)
-        if not crypto_quote.get("price_usd") and not crypto_quote.get("market_cap_usd"):
-            # Still allow a zeroed-out result to flow through rather than hard failing,
-            # but if literally nothing resolved (no symbol/name match at all), report it.
-            normalized_check = _normalize_crypto_payload(crypto_res, clean_crypto)
-            if not normalized_check:
-                return {"error": f"Crypto asset '{clean_crypto}' quote data not found."}
+        # --- Merge the two isolated pipeline results ---
+        rwa_mcap = rwa_data["market_cap_usd"]
+        crypto_mcap = crypto_data["market_cap_usd"]
+        asset_label = rwa_data["asset_label"]
 
-        crypto_price = crypto_quote["price_usd"]
-        crypto_mcap = crypto_quote["market_cap_usd"]
-        crypto_vol = crypto_quote["volume_24h_usd"]
-        crypto_change = crypto_quote["percent_change_24h"]
-
-        # 4. Parse RWA Data (Extract specific child token like PAXG if available)
-        rwa_info = _normalize_rwa_payload(rwa_res)
-        specific_token = _extract_token_by_symbol(rwa_info, clean_rwa)
-        parent_symbol = rwa_info.get("symbol") or clean_rwa
-        parent_name = rwa_info.get("name") or clean_rwa
-
-        if specific_token:
-            rwa_name = specific_token.get("name", parent_name)
-            rwa_mcap = _safe_float(specific_token.get("market_cap"), 0.0)
-            rwa_price = _safe_float(specific_token.get("price"), 0.0)
-            rwa_volume = _safe_float(specific_token.get("volume_24h"), 0.0)
-            asset_label = f"{parent_name} ({parent_symbol})"
-            rwa_symbol_out = parent_symbol
-        else:
-            rwa_name = parent_name
-            quote = (rwa_info.get("quotes") or [{}])[0]
-            rwa_mcap = _safe_float(quote.get("tokenized_market_cap") or rwa_info.get("tokenized_market_cap"), 0.0)
-            rwa_price = _safe_float(quote.get("average_tokenized_price") or rwa_info.get("average_tokenized_price"), 0.0)
-            rwa_volume = _safe_float(quote.get("tokenized_volume_24h") or rwa_info.get("tokenized_volume_24h"), 0.0)
-            asset_label = f"Tokenized {rwa_name}"
-            rwa_symbol_out = parent_symbol
-
-        # 5. Compute Metrics
         mcap_ratio = (
             round(crypto_mcap / rwa_mcap, 2)
             if (rwa_mcap > 0 and crypto_mcap > 0)
@@ -218,20 +254,20 @@ async def compare_rwa_vs_crypto(rwa_symbol: str, crypto_symbol: str, api_key: st
                 else f"Comparison complete for {clean_crypto} and {asset_label}."
             ),
             "rwa_asset": {
-                "symbol": rwa_symbol_out,
-                "name": rwa_name,
-                "price_usd": rwa_price,
+                "symbol": rwa_data["symbol"],
+                "name": rwa_data["name"],
+                "price_usd": rwa_data["price_usd"],
                 "market_cap_usd": rwa_mcap,
-                "volume_24h_usd": rwa_volume,
-                "is_specific_token": specific_token is not None,
+                "volume_24h_usd": rwa_data["volume_24h_usd"],
+                "is_specific_token": rwa_data["is_specific_token"],
             },
             "crypto_asset": {
-                "symbol": crypto_quote.get("symbol", clean_crypto),
-                "name": crypto_quote.get("name", clean_crypto),
-                "price_usd": crypto_price,
+                "symbol": crypto_data.get("symbol", clean_crypto),
+                "name": crypto_data.get("name", clean_crypto),
+                "price_usd": crypto_data["price_usd"],
                 "market_cap_usd": crypto_mcap,
-                "volume_24h_usd": crypto_vol,
-                "percent_change_24h": crypto_change,
+                "volume_24h_usd": crypto_data["volume_24h_usd"],
+                "percent_change_24h": crypto_data["percent_change_24h"],
             },
             "metrics": {
                 "market_cap_ratio_crypto_to_rwa": mcap_ratio,

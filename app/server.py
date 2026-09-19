@@ -26,7 +26,7 @@ RwaSymbol = Annotated[
         description="RWA symbol or token symbol, for example GOLD, NVDA, or PAXG.",
         min_length=2,
         max_length=16,
-        pattern=r"^[A-Z0-9$@\-]+$",
+        pattern=r"^[A-Za-z0-9_\-$@]+$",
     ),
 ]
 
@@ -36,7 +36,7 @@ CryptoSymbol = Annotated[
         description="Crypto ticker symbol, for example BTC, ETH, SOL.",
         min_length=2,
         max_length=10,
-        pattern=r"^[A-Z0-9]+$",
+        pattern=r"^[A-Za-z0-9_\-]+$",
     ),
 ]
 
