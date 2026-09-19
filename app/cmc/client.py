@@ -35,14 +35,11 @@ class CMCClient:
 
     @property
     def client(self) -> httpx.AsyncClient:
-        """Lazily initializes and returns the httpx.AsyncClient instance."""
+        """Lazily initializes and returns the base httpx.AsyncClient instance."""
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 base_url=settings.CMC_BASE_URL,
-                headers={
-                    "X-CMC_PRO_API_KEY": settings.CMC_API_KEY,
-                    "Accept": "application/json",
-                },
+                headers={"Accept": "application/json"},
                 timeout=settings.CMC_TIMEOUT_SECONDS,
             )
         return self._client
@@ -73,23 +70,29 @@ class CMCClient:
 
     async def _request_json(
         self,
+        api_key: str,
         path: str,
         params: Optional[Dict[str, Any]] = None,
         response_model: Optional[Type[Any]] = None,
         ttl_seconds: float = 30.0,
         use_cache: bool = True,
     ) -> Dict[str, Any]:
-        """Perform a throttled request with optional TTL-based caching."""
+        """Perform a throttled request with optional TTL-based caching using the provided API key."""
         cache_key = self._cache_key(path, params) if use_cache else None
         if use_cache and cache_key is not None:
             cached = await self._cache.get(cache_key)
             if cached is not None:
                 return cached
 
+        headers = {
+            "X-CMC_PRO_API_KEY": api_key,
+            "Accept": "application/json",
+        }
+
         for attempt in range(1, settings.CMC_MAX_RETRIES + 2):
             async with self._rate_limiter:
                 try:
-                    response = await self.client.get(path, params=params)
+                    response = await self.client.get(path, params=params, headers=headers)
                     data = self._handle_response(response, response_model=response_model)
                     if use_cache and cache_key is not None:
                         await self._cache.set(cache_key, data, ttl_seconds=ttl_seconds)
@@ -103,6 +106,7 @@ class CMCClient:
 
     async def get_rwa_quotes(
         self,
+        api_key: str,
         rwa_id: Optional[str] = None,
         symbol: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -114,49 +118,65 @@ class CMCClient:
             params["symbol"] = symbol
 
         return await self._request_json(
-            "/v5/real-world-assets/quotes/latest",
+            api_key=api_key,
+            path="/v5/real-world-assets/quotes/latest",
             params=params,
             response_model=RWAQuotesResponse,
             ttl_seconds=30.0,
             use_cache=True,
         )
 
-    async def get_rwa_issuers_list(self, limit: int = 100, start: int = 1) -> Dict[str, Any]:
+    async def get_rwa_issuers_list(
+        self,
+        api_key: str,
+        limit: int = 100,
+        start: int = 1,
+    ) -> Dict[str, Any]:
         """Fetches the list of registered RWA issuers."""
         params = {"limit": limit, "start": start}
         return await self._request_json(
-            "/v5/real-world-assets/issuers/list",
+            api_key=api_key,
+            path="/v5/real-world-assets/issuers/list",
             params=params,
             response_model=RWAIssuersResponse,
             ttl_seconds=300.0,
             use_cache=True,
         )
 
-    async def get_rwa_issuer(self, issuer_id: str, limit: int = 100, start: int = 1) -> Dict[str, Any]:
+    async def get_rwa_issuer(
+        self,
+        api_key: str,
+        issuer_id: str,
+        limit: int = 100,
+        start: int = 1,
+    ) -> Dict[str, Any]:
         """Fetches one RWA issuer and its token list."""
         params = {"issuer_id": issuer_id, "limit": limit, "start": start}
         return await self._request_json(
-            "/v5/real-world-assets/issuers",
+            api_key=api_key,
+            path="/v5/real-world-assets/issuers",
             params=params,
             response_model=RWAIssuersResponse,
             ttl_seconds=300.0,
             use_cache=True,
         )
 
-    async def get_crypto_quotes(self, symbol: str) -> Dict[str, Any]:
+    async def get_crypto_quotes(self, api_key: str, symbol: str) -> Dict[str, Any]:
         """Fetches market quotes for standard cryptocurrencies (e.g., BTC, ETH)."""
         return await self._request_json(
-            "/v3/cryptocurrency/quotes/latest",
+            api_key=api_key,
+            path="/v3/cryptocurrency/quotes/latest",
             params={"symbol": symbol},
             response_model=CryptoQuotesResponse,
             ttl_seconds=20.0,
             use_cache=True,
         )
 
-    async def get_global_metrics(self) -> Dict[str, Any]:
+    async def get_global_metrics(self, api_key: str) -> Dict[str, Any]:
         """Fetches global market cap and dominance indicators."""
         return await self._request_json(
-            "/v1/global-metrics/quotes/latest",
+            api_key=api_key,
+            path="/v1/global-metrics/quotes/latest",
             params={},
             response_model=GlobalMetricsResponse,
             ttl_seconds=120.0,
