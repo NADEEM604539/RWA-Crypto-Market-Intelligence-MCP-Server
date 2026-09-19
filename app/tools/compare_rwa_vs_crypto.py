@@ -33,7 +33,7 @@ def _extract_token_by_symbol(rwa_data: Dict[str, Any], target_symbol: str) -> Op
     tokens = rwa_data.get("tokens", [])
     if isinstance(tokens, list):
         for token in tokens:
-            if isinstance(token, dict) and token.get("symbol", "").upper() == target_symbol:
+            if isinstance(token, dict) and str(token.get("symbol") or "").upper() == target_symbol:
                 return token
     return None
 
@@ -138,6 +138,65 @@ def extract_crypto_quote(api_response: Any, symbol: str) -> Dict[str, Any]:
     }
 
 
+def _volume_to_market_cap(volume: Any, market_cap: Any) -> Optional[float]:
+    """V/MC liquidity (turnover) ratio as a fraction, e.g. 0.0332 == 3.32%.
+
+    Returns None (not 0.0) when market cap is missing or zero so a ratio is never fabricated.
+    """
+    mcap = _safe_float(market_cap, 0.0)
+    if mcap <= 0:
+        return None
+    return round(_safe_float(volume, 0.0) / mcap, 6)
+
+
+def _raw_percent_change_24h(token_data: Dict[str, Any]) -> Optional[float]:
+    """Read percent_change_24h from a normalized crypto record, or None if absent.
+
+    extract_crypto_quote() coerces missing values to 0.0, which would be indistinguishable
+    from a genuine 0% move, so this reads the raw field instead.
+    """
+    raw_quote = token_data.get("quote", {}) if isinstance(token_data, dict) else {}
+    quote_usd = raw_quote.get("USD", {}) if isinstance(raw_quote, dict) else {}
+    value = quote_usd.get("percent_change_24h") if isinstance(quote_usd, dict) else None
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+async def _fetch_token_change_24h(
+    token_symbol: str, expected_crypto_id: Optional[Any], api_key: str
+) -> Optional[float]:
+    """24h price change for a tokenized RWA (e.g. PAXG).
+
+    CMC's RWA endpoints carry no price-change field, but every tokenized RWA is also an
+    ordinary listed coin, so its change is read from the crypto quotes endpoint.
+    Returns None when unavailable. When both sides report an id and they differ (a
+    different coin sharing the ticker), the result is discarded rather than trusted.
+    """
+    symbol_upper = token_symbol.strip().upper()
+    try:
+        res = await cmc_client.get_crypto_quotes(api_key=api_key, symbol=symbol_upper)
+    except Exception:
+        return None
+
+    token_data = _normalize_crypto_payload(res, symbol_upper)
+    if not token_data:
+        return None
+
+    returned_id = token_data.get("id")
+    if expected_crypto_id is not None and returned_id is not None:
+        try:
+            if int(expected_crypto_id) != int(returned_id):
+                return None
+        except (TypeError, ValueError):
+            return None
+
+    return _raw_percent_change_24h(token_data)
+
+
 # ============================================================================
 # Dual-pipeline fetchers
 #
@@ -179,13 +238,23 @@ async def fetch_rwa_data(symbol: str, api_key: str) -> Dict[str, Any]:
     parent_name = rwa_info.get("name") or clean_symbol
 
     if specific_token:
+        token_symbol = str(specific_token.get("symbol") or clean_symbol)
+        change_24h = await _fetch_token_change_24h(
+            token_symbol, specific_token.get("crypto_id"), api_key=api_key
+        )
         return {
+            # `symbol` stays the PARENT symbol (GOLD) for backward compatibility;
+            # `token_symbol` / `parent_symbol` make the slice explicit.
             "symbol": parent_symbol,
+            "token_symbol": token_symbol,
+            "parent_symbol": parent_symbol,
+            "issuer_name": specific_token.get("issuer_name"),
             "name": specific_token.get("name", parent_name),
             "price_usd": _safe_float(specific_token.get("price"), 0.0),
             "market_cap_usd": _safe_float(specific_token.get("market_cap"), 0.0),
             "volume_24h_usd": _safe_float(specific_token.get("volume_24h"), 0.0),
-            "asset_label": f"{parent_name} ({parent_symbol})",
+            "percent_change_24h": change_24h,
+            "asset_label": f"{parent_name} ({token_symbol})",
             "is_specific_token": True,
         }
 
@@ -197,6 +266,10 @@ async def fetch_rwa_data(symbol: str, api_key: str) -> Dict[str, Any]:
         "market_cap_usd": _safe_float(quote.get("tokenized_market_cap") or rwa_info.get("tokenized_market_cap"), 0.0),
         "volume_24h_usd": _safe_float(quote.get("tokenized_volume_24h") or rwa_info.get("tokenized_volume_24h"), 0.0),
         "asset_label": f"Tokenized {parent_name}",
+        "token_symbol": None,
+        "parent_symbol": parent_symbol,
+        "issuer_name": None,
+        "percent_change_24h": None,
         "is_specific_token": False,
     }
 
@@ -252,6 +325,13 @@ async def compare_rwa_vs_crypto(rwa_symbol: str, crypto_symbol: str, api_key: st
             else None
         )
 
+        notes = []
+        if rwa_data.get("percent_change_24h") is None:
+            notes.append(
+                "RWA-side percent_change_24h is unavailable: CMC's RWA endpoints do not report it "
+                "for aggregate assets. Compare a specific token symbol (e.g. PAXG) to include it."
+            )
+
         return {
             "comparison_summary": (
                 f"{clean_crypto} market cap is {mcap_ratio}x the size of {asset_label}."
@@ -260,10 +340,15 @@ async def compare_rwa_vs_crypto(rwa_symbol: str, crypto_symbol: str, api_key: st
             ),
             "rwa_asset": {
                 "symbol": rwa_data["symbol"],
+                "token_symbol": rwa_data.get("token_symbol"),
+                "parent_symbol": rwa_data.get("parent_symbol"),
+                "issuer_name": rwa_data.get("issuer_name"),
                 "name": rwa_data["name"],
                 "price_usd": rwa_data["price_usd"],
                 "market_cap_usd": rwa_mcap,
                 "volume_24h_usd": rwa_data["volume_24h_usd"],
+                "percent_change_24h": rwa_data.get("percent_change_24h"),
+                "volume_to_market_cap_ratio": _volume_to_market_cap(rwa_data["volume_24h_usd"], rwa_mcap),
                 "is_specific_token": rwa_data["is_specific_token"],
             },
             "crypto_asset": {
@@ -273,9 +358,14 @@ async def compare_rwa_vs_crypto(rwa_symbol: str, crypto_symbol: str, api_key: st
                 "market_cap_usd": crypto_mcap,
                 "volume_24h_usd": crypto_data["volume_24h_usd"],
                 "percent_change_24h": crypto_data["percent_change_24h"],
+                "volume_to_market_cap_ratio": _volume_to_market_cap(crypto_data["volume_24h_usd"], crypto_mcap),
             },
             "metrics": {
                 "market_cap_ratio_crypto_to_rwa": mcap_ratio,
+                # V/MC = 24h volume / market cap, as a fraction (0.0332 == 3.32%).
+                "volume_to_market_cap_ratio_rwa": _volume_to_market_cap(rwa_data["volume_24h_usd"], rwa_mcap),
+                "volume_to_market_cap_ratio_crypto": _volume_to_market_cap(crypto_data["volume_24h_usd"], crypto_mcap),
+                "notes": notes,
             },
         }
 
