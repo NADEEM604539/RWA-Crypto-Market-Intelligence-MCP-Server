@@ -1,7 +1,8 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from app.cmc.client import cmc_client
 from app.tools.resolve_rwa_asset import resolve_rwa_asset
+from app.utils.cache import shared_cache
 
 # Troy ounce <-> gram conversion.
 _GRAMS_PER_TROY_OUNCE = 31.1034768
@@ -70,13 +71,61 @@ def _annotate_token_unit(token: Dict[str, Any], is_gold: bool) -> Dict[str, Any]
 # the issuer-detail lookup, which is not currently exposed as an MCP tool).
 RWA_SYMBOL_ALIASES: Dict[str, str] = {}
 
-# Identifiers verified to resolve against the live RWA dataset.
-SUPPORTED_RWA_SYMBOLS = ["GOLD", "PAXG", "XAUT", "XAUM", "CGO", "VNXAU"]
-
 # Institutional tickers known to be requested but NOT currently indexed by
 # this data source, surfaced separately so the error message is honest
 # instead of implying they're supported.
 KNOWN_UNTRACKED_IDENTIFIERS = ["BUIDL", "OUSG", "USDY"]
+
+# Only used if the live lookup below fails outright (upstream outage, bad
+# key, etc.) -- kept deliberately tiny so it can never quietly drift out of
+# sync with the real token set the way a full hand-maintained list did (the
+# previous static SUPPORTED_RWA_SYMBOLS list was missing XAUT0 and XAU
+# despite both being live gold tokens, since nobody updates a hardcoded
+# list when CMC adds a new one).
+_FALLBACK_SUPPORTED_RWA_SYMBOLS = ["GOLD", "PAXG", "XAUT"]
+
+_SUPPORTED_SYMBOLS_CACHE_KEY = "rwa_market_quote:supported_symbols:gold"
+_SUPPORTED_SYMBOLS_CACHE_TTL_SECONDS = 60.0
+
+
+async def _get_supported_rwa_symbols(api_key: str) -> List[str]:
+    """
+    Returns the live set of resolvable RWA/token symbols by reading the
+    GOLD parent asset's own token list -- the same live data this tool
+    already serves to callers -- instead of a hand-maintained list that
+    silently goes stale every time CMC adds a new gold token.
+
+    Reuses resolve_rwa_asset() rather than hardcoding GOLD's rwa_id, so this
+    doesn't reintroduce the exact "hardcoded value nobody updates" problem
+    it's meant to fix. Cached for 60s via the shared TTL cache so a burst of
+    "not found" lookups doesn't turn into a burst of extra upstream calls.
+    Any failure degrades to the small static fallback rather than raising --
+    building an error hint must never itself become the error the caller sees.
+    """
+    async def _fetch() -> List[str]:
+        try:
+            resolved = await resolve_rwa_asset("GOLD", api_key=api_key)
+            rwa_id = resolved.get("rwa_id")
+            if rwa_id is None:
+                return list(_FALLBACK_SUPPORTED_RWA_SYMBOLS)
+
+            data = await cmc_client.get_rwa_quotes(api_key=api_key, rwa_id=str(rwa_id))
+            rwa_assets = data.get("rwa_assets", []) if isinstance(data, dict) else []
+            if not rwa_assets:
+                return list(_FALLBACK_SUPPORTED_RWA_SYMBOLS)
+
+            symbols = {"GOLD"}
+            for token in rwa_assets[0].get("tokens", []):
+                symbol = token.get("symbol")
+                if symbol:
+                    symbols.add(str(symbol).upper())
+            return sorted(symbols)
+        except Exception:
+            return list(_FALLBACK_SUPPORTED_RWA_SYMBOLS)
+
+    return await shared_cache.get_or_set(
+        _SUPPORTED_SYMBOLS_CACHE_KEY, _fetch, ttl_seconds=_SUPPORTED_SYMBOLS_CACHE_TTL_SECONDS
+    )
 
 
 async def get_rwa_market_quote(identifier: str, api_key: str) -> Dict[str, Any]:
@@ -102,7 +151,7 @@ async def get_rwa_market_quote(identifier: str, api_key: str) -> Dict[str, Any]:
                 "error": f"Identifier '{clean_id}' exceeds the maximum supported symbol length of 16 characters.",
                 "requested_identifier": identifier,
                 "normalized_identifier": clean_id,
-                "supported_identifiers": SUPPORTED_RWA_SYMBOLS,
+                "supported_identifiers": await _get_supported_rwa_symbols(api_key),
             }
 
         search_target = RWA_SYMBOL_ALIASES.get(clean_id, clean_id)
@@ -127,7 +176,7 @@ async def get_rwa_market_quote(identifier: str, api_key: str) -> Dict[str, Any]:
                     "hint": hint,
                     "requested_identifier": identifier,
                     "normalized_identifier": clean_id,
-                    "supported_identifiers": SUPPORTED_RWA_SYMBOLS,
+                    "supported_identifiers": await _get_supported_rwa_symbols(api_key),
                 }
             rwa_id = resolved.get("rwa_id")
             data = await cmc_client.get_rwa_quotes(api_key=api_key, rwa_id=str(rwa_id))
@@ -139,7 +188,7 @@ async def get_rwa_market_quote(identifier: str, api_key: str) -> Dict[str, Any]:
                 "error": f"No market quote found for identifier '{identifier}'.",
                 "requested_identifier": identifier,
                 "normalized_identifier": clean_id,
-                "supported_identifiers": SUPPORTED_RWA_SYMBOLS,
+                "supported_identifiers": await _get_supported_rwa_symbols(api_key),
             }
 
         asset = rwa_assets[0]
@@ -206,5 +255,5 @@ async def get_rwa_market_quote(identifier: str, api_key: str) -> Dict[str, Any]:
             "resolved": False,
             "error": f"Failed to fetch market quote for '{identifier}': {str(e)}",
             "requested_identifier": identifier,
-            "supported_identifiers": SUPPORTED_RWA_SYMBOLS,
+            "supported_identifiers": _FALLBACK_SUPPORTED_RWA_SYMBOLS,
         }
