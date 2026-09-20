@@ -1,0 +1,22 @@
+app/
+├── server.py          FastMCP entrypoint — registers 5 tools, health route, auth wiring
+├── config.py          Pydantic Settings (.env-driven: rate limits, retries, timeouts)
+├── auth/auth.py        Per-key sliding-window rate limiter + CMC key verification (cached)
+├── cmc/
+│   ├── client.py       Single async HTTP client: caching, retries, rate-limiting, schema validation
+│   ├── schemas.py       Pydantic models absorbing CMC's inconsistent response shapes
+│   └── exceptions.py    Typed exception hierarchy (400/401/403/404/429 → distinct classes)
+├── tools/
+│   ├── resolve_rwa_asset.py       2-tier resolver: parent symbol → token-registry fallback
+│   ├── get_rwa_market_quote.py    Aggregate + per-token quotes, gold gram/oz unit normalization
+│   ├── compare_rwa_vs_crypto.py   Dual-pipeline RWA+crypto fetch → merged comparison (biggest file, 15.6KB)
+│   ├── get_rwa_issuers_info.py    Issuer listing, cached
+│   └── get_global_market_metrics.py  BTC/ETH dominance, cached 2min
+└── utils/
+    ├── cache.py         TTLCache + AsyncRateLimiter (token bucket)
+    └── logging.py       Stderr-only structured logging, secret redaction
+tests/
+    test_mcp_tools_unit.py   Solid pytest suite with realistic CMC-shaped fakes
+    agent.py, streamlit_app.py   LangGraph/Streamlit demo clients
+docs/
+    architecture.md, DEPLOYMENT.md, MCP_CONNECTION.md
