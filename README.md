@@ -11,7 +11,9 @@ The public remote endpoint is live and ready for MCP-compatible clients:
 
 - **MCP endpoint:** `https://cmcserver.fastmcp.app/mcp`
 - **Health endpoint:** `https://cmcserver.fastmcp.app/`
-- **Auth header:** `X-CMC_PRO_API_KEY` **DON'T WORRY IF I ACCIDENTLY PUSHED THE API KEY DURING TESTING NOW I HAVE DELETED IT**
+- **Auth header:** `X-CMC_PRO_API_KEY`
+
+> **Security note:** API keys are supplied per-request via the `X-CMC_PRO_API_KEY` header and are never committed to this repository or persisted server-side. See `app/auth/auth.py` for key validation and rate-limiting, and `app/utils/logging.py` for secret redaction in logs.
 
 
 This service is designed to be consumed by Claude Desktop, Cursor, LangGraph agents, and custom Python clients using HTTP/SSE transport.
