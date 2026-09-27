@@ -327,6 +327,26 @@ pytest .
 
 ---
 
+## Test coverage
+
+The suite is split across two files totaling 44 tests:
+
+| File | Tests | Covers |
+|---|---|---|
+| `tests/test_mcp_tools_unit.py` | 13 | `resolve_rwa_asset` two-tier resolution, `compare_rwa_vs_crypto` merge logic, schema regressions (`RWAIssuerResponse`), retry-eligibility rules (`_is_retryable`) |
+| `tests/test_extended_coverage.py` | 31 | `app/utils/cache.py` (`TTLCache` TTL/eviction/get-or-set, `AsyncRateLimiter` token bucket), `app/auth/auth.py` (per-key sliding-window `RateLimiter`, `authenticate_and_rate_limit`), `get_global_market_metrics`, `get_rwa_issuers_info`, and the gram-vs-troy-ounce/16-char/untracked-ticker edge cases in `get_rwa_market_quote` |
+
+Every test targets a real, exercisable failure mode (TTL expiry boundary, sliding-window rate-limit resets, retry-after values, cache-key isolation per limit/param, honest "not tracked" hints for untracked tickers such as `BUIDL`/`OUSG`/`USDY`) rather than asserting shape alone.
+
+### Known gaps (not yet covered)
+
+- **`app/server.py`** — request validation and auth wiring are exercised indirectly through `auth.py` and tool-level tests, but there's no test that goes through the actual FastMCP request/tool-dispatch boundary.
+- **`app/config.py`** — Pydantic Settings loading/env parsing is untested.
+- **`app/utils/logging.py`** — secret-redaction behavior is undocumented by tests, despite being called out as a security feature in the README.
+- **`compare_rwa_vs_crypto`** — the aggregate (non-token) branch and list-payload branch are covered, but there's no test for a crypto-side lookup failure (e.g. `BTC` symbol itself returning an error) inside the comparison flow.
+
+---
+
 ## Documentation references
 
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
