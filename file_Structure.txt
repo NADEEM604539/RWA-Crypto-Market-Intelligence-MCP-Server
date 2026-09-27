@@ -16,7 +16,9 @@ app/
     ├── cache.py         TTLCache + AsyncRateLimiter (token bucket)
     └── logging.py       Stderr-only structured logging, secret redaction
 tests/
-    test_mcp_tools_unit.py   Solid pytest suite with realistic CMC-shaped fakes
+    test_mcp_tools_unit.py       Core suite (resolution, comparison, schema/retry regressions) - realistic CMC-shaped fakes
+    test_extended_coverage.py   Extended suite (31 tests) - cache.py, auth.py, get_global_market_metrics.py,
+                                 get_rwa_issuers_info.py, get_rwa_market_quote.py unit-conversion/edge paths
     agent.py, streamlit_app.py   LangGraph/Streamlit demo clients
 docs/
     architecture.md, DEPLOYMENT.md, MCP_CONNECTION.md
